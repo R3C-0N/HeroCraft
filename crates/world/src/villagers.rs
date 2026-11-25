@@ -365,7 +365,7 @@ const MASCULINE_HAIR: [&str; 13] = ["rasee", "courte", "brosse", "degrade", "fra
 
 /// L'apparence se lit comme celle d'une femme : sans barbe (les naines ont la leur) et coiffée en
 /// femme
-pub fn looks_feminine(look: &herocraft_common::hero::Appearance) -> bool {
+pub(crate) fn looks_feminine(look: &herocraft_common::hero::Appearance) -> bool {
     let beardless = look.barbe == "aucune" || look.espece == "nain";
     beardless && FEMININE_HAIR.contains(&look.coiffure.as_str())
 }
@@ -443,7 +443,7 @@ fn of_town(name: &str) -> String {
 }
 
 /// Nom d'une ville ou d'un village, tiré de sa place et de sa culture
-pub fn town_name(s: &Settlement) -> String {
+pub(crate) fn town_name(s: &Settlement) -> String {
     let h = mix(hash2(0x0A3E ^ ((face_index(s.face) as u64) << 40), s.center.0, s.center.1));
     let (starts, ends): (&[&str], &[&str]) = match s.culture.unwrap_or(Culture::Humains) {
         Culture::Humains => (
@@ -791,7 +791,7 @@ impl Villages {
     /// Fiche de la personne qu'incarne la créature `id`
     /// Nom de la ville où vit (ou séjourne) la personne qu'incarne la créature `id` ; `None` sur
     /// les routes
-    pub fn town_of(&self, id: CreatureId) -> Option<&str> {
+    pub(crate) fn town_of(&self, id: CreatureId) -> Option<&str> {
         let person = self.people.iter().find(|p| p.creature == Some(id))?;
         let key = match &person.role {
             Role::Resident { town, .. } => *town,

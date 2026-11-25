@@ -36,7 +36,7 @@ const ICON_SCALE: f32 = 1.4;
 const SPIN_SPEED: f32 = 1.6;
 
 #[derive(Debug, Clone, Copy)]
-pub struct DroppedItem {
+pub(crate) struct DroppedItem {
     pub item: ItemId,
     /// Centre du cube, dans le repère du monde
     pub position: Vec3,
@@ -50,7 +50,7 @@ pub struct DroppedItem {
 }
 
 #[derive(Default)]
-pub struct DroppedItems {
+pub(crate) struct DroppedItems {
     items: Vec<DroppedItem>,
     /// Pierres du Néant ramassées depuis le dernier `take_stone_events`
     stone_events: Vec<StoneEvent>,
@@ -59,24 +59,24 @@ pub struct DroppedItems {
 }
 
 impl DroppedItems {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     #[allow(dead_code)]
-    pub fn items(&self) -> &[DroppedItem] {
+    pub(crate) fn items(&self) -> &[DroppedItem] {
         &self.items
     }
 
     /// Plus aucun objet (changement de planète)
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.dirty |= !self.items.is_empty();
         self.items.clear();
     }
 
     /// Fait tomber `item` depuis `center` (le centre du bloc cassé, ou le flanc de la bête tuée),
     /// avec un petit saut vers le haut
-    pub fn spawn(&mut self, item: impl Into<ItemId>, center: Vec3, block_height: f32) {
+    pub(crate) fn spawn(&mut self, item: impl Into<ItemId>, center: Vec3, block_height: f32) {
         let item = item.into();
         let up = center.normalize_or_zero();
         // Phase pseudo-aléatoire tirée de la position : deux objets ne tournent pas à l'unisson
@@ -97,7 +97,7 @@ impl DroppedItems {
 
     /// Pose `item` sans saut en `center` (un œuf pondu, aux pieds de la bête) : il tombe droit au
     /// sol et y reste, sans être attiré par le joueur qui passe près (il se ramasse en marchant dessus)
-    pub fn lay(&mut self, item: impl Into<ItemId>, center: Vec3) {
+    pub(crate) fn lay(&mut self, item: impl Into<ItemId>, center: Vec3) {
         let phase = (center.x * 12.9898 + center.y * 78.233 + center.z * 37.719).sin().fract().abs() * std::f32::consts::TAU;
         self.items.push(DroppedItem { item: item.into(), position: center, velocity: Vec3::ZERO, age: 0.0, phase, attracted: false });
         self.evict_oldest();
@@ -106,7 +106,7 @@ impl DroppedItems {
 
     /// Pose `item` en `center`, sans saut (une Pierre du Néant sur l'autel d'un temple) : il
     /// tombe droit au sol et s'attire vers le joueur qui s'approche, comme un butin
-    pub fn place(&mut self, item: impl Into<ItemId>, center: Vec3) {
+    pub(crate) fn place(&mut self, item: impl Into<ItemId>, center: Vec3) {
         let phase = (center.x * 12.9898 + center.y * 78.233 + center.z * 37.719).sin().fract().abs() * std::f32::consts::TAU;
         self.items.push(DroppedItem { item: item.into(), position: center, velocity: Vec3::ZERO, age: 0.0, phase, attracted: true });
         self.evict_oldest();
@@ -122,14 +122,14 @@ impl DroppedItems {
     }
 
     /// Les Pierres du Néant ramassées depuis le dernier appel (« Pierre obtenue »)
-    pub fn take_stone_events(&mut self) -> Vec<StoneEvent> {
+    pub(crate) fn take_stone_events(&mut self) -> Vec<StoneEvent> {
         std::mem::take(&mut self.stone_events)
     }
 
     /// Chute, pose sur le relief, attraction vers le joueur et ramassage. `player_center` est le
     /// milieu du corps du joueur, ou rien s'il ne peut pas ramasser (vue satellite). Renvoie le
     /// nombre d'objets ramassés.
-    pub fn update(
+    pub(crate) fn update(
         &mut self,
         dt: f32,
         generator: &PlanetWorldGenerator,
@@ -194,7 +194,7 @@ impl DroppedItems {
 
     /// Maillage des cubes à dessiner avec le relief (même éclairage et mêmes ombres), ou rien
     /// s'il n'a pas changé depuis le dernier appel
-    pub fn take_mesh(&mut self, block_height: f32, time: f32) -> Option<PlanetMesh> {
+    pub(crate) fn take_mesh(&mut self, block_height: f32, time: f32) -> Option<PlanetMesh> {
         if !self.dirty {
             return None;
         }

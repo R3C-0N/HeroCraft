@@ -4,7 +4,7 @@
 use std::f32::consts::TAU;
 
 /// Fréquence d'échantillonnage des sons (mono)
-pub const SAMPLE_RATE: u32 = 44_100;
+pub(crate) const SAMPLE_RATE: u32 = 44_100;
 
 /// Matière d'un bloc, pour le timbre des pas et des blocs cassés ou posés
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -155,7 +155,7 @@ fn timbre(material: Material) -> Timbre {
 }
 
 /// Pas sur une matière
-pub fn footstep(material: Material, seed: u32) -> Vec<f32> {
+pub(crate) fn footstep(material: Material, seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x5157);
     let tb = timbre(material);
     let n = samples(tb.length);
@@ -186,7 +186,7 @@ pub fn footstep(material: Material, seed: u32) -> Vec<f32> {
 }
 
 /// Bloc cassé : éclats de la matière et chute de débris
-pub fn block_break(material: Material, seed: u32) -> Vec<f32> {
+pub(crate) fn block_break(material: Material, seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0xB4EA);
     let tb = timbre(material);
     let length = 0.32;
@@ -220,7 +220,7 @@ pub fn block_break(material: Material, seed: u32) -> Vec<f32> {
 }
 
 /// Bloc posé : coup bref et mat, la hauteur dépend de la matière
-pub fn block_place(material: Material, seed: u32) -> Vec<f32> {
+pub(crate) fn block_place(material: Material, seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x91AC);
     let tb = timbre(material);
     let length = 0.14;
@@ -241,7 +241,7 @@ pub fn block_place(material: Material, seed: u32) -> Vec<f32> {
 }
 
 /// Souffle d'un saut : bruit dont la bande monte rapidement
-pub fn jump_whoosh(seed: u32) -> Vec<f32> {
+pub(crate) fn jump_whoosh(seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x7A3F);
     let length = 0.22;
     let n = samples(length);
@@ -257,7 +257,7 @@ pub fn jump_whoosh(seed: u32) -> Vec<f32> {
 }
 
 /// Coup sourd de la réception, ajouté au pas de la matière
-pub fn landing_thud(seed: u32) -> Vec<f32> {
+pub(crate) fn landing_thud(seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x1A4D);
     let length = 0.25;
     let n = samples(length);
@@ -275,7 +275,7 @@ pub fn landing_thud(seed: u32) -> Vec<f32> {
 }
 
 /// Souffle coupé d'une blessure (« oumpf ») : voix grave qui retombe, à travers deux formants
-pub fn hurt_grunt(seed: u32) -> Vec<f32> {
+pub(crate) fn hurt_grunt(seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x4E27);
     let length = 0.3;
     let n = samples(length);
@@ -301,7 +301,7 @@ pub fn hurt_grunt(seed: u32) -> Vec<f32> {
 }
 
 /// Bouchées croquées : trois craquements secs et étouffés, de plus en plus faibles
-pub fn eat_crunch(seed: u32) -> Vec<f32> {
+pub(crate) fn eat_crunch(seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0xEA7);
     let length = 0.6;
     let n = samples(length);
@@ -322,7 +322,7 @@ pub fn eat_crunch(seed: u32) -> Vec<f32> {
 
 /// Vent en boucle : bruit filtré dont le timbre et le volume ondulent en rafales.
 /// La fin se fond dans le début : la boucle n'a pas de raccord audible.
-pub fn wind_loop(seconds: f32, seed: u32) -> Vec<f32> {
+pub(crate) fn wind_loop(seconds: f32, seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x3D11);
     let n = samples(seconds);
     let fade = samples(1.0).min(n / 4);
@@ -354,7 +354,7 @@ pub fn wind_loop(seconds: f32, seed: u32) -> Vec<f32> {
 /// Murmure de l'éclat de la Pierre du Néant, en boucle : un souffle chuchoté (bruit passé dans
 /// deux formants de voyelle, haché en syllabes qui ne disent rien) sur un bourdon grave et
 /// dissonant qui ondule. La fin se fond dans le début.
-pub fn whisper_loop(seconds: f32, seed: u32) -> Vec<f32> {
+pub(crate) fn whisper_loop(seconds: f32, seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x5EC7);
     let n = samples(seconds);
     let fade = samples(1.0).min(n / 4);
@@ -397,7 +397,7 @@ pub fn whisper_loop(seconds: f32, seed: u32) -> Vec<f32> {
 
 /// Pluie en boucle : un souffle doux (bruit filtré) semé de petits impacts de gouttes. Comme le
 /// vent, la fin se fond dans le début.
-pub fn rain_loop(seconds: f32, seed: u32) -> Vec<f32> {
+pub(crate) fn rain_loop(seconds: f32, seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0x4A1F);
     let n = samples(seconds);
     let fade = samples(1.0).min(n / 4);
@@ -453,7 +453,7 @@ pub fn thunder(seed: u32) -> Vec<f32> {
 }
 
 /// Chant d'oiseau : quelques notes sifflées qui glissent, avec un léger trémolo
-pub fn bird_song(seed: u32) -> Vec<f32> {
+pub(crate) fn bird_song(seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0xB12D);
     let notes = 2 + (rng.unit() * 4.0) as usize;
     let base = 2600.0 + 1800.0 * rng.unit();
@@ -477,7 +477,7 @@ pub fn bird_song(seed: u32) -> Vec<f32> {
 }
 
 /// Grillons la nuit : trains d'impulsions aiguës
-pub fn cricket_chirps(seed: u32) -> Vec<f32> {
+pub(crate) fn cricket_chirps(seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0xC41C);
     let freq = 4200.0 + 900.0 * rng.unit();
     let trains = 2 + (rng.unit() * 3.0) as usize;

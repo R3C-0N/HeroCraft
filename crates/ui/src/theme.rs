@@ -7,10 +7,10 @@ pub const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(180, 158, 124);
 pub const TEXT_SOFT: egui::Color32 = egui::Color32::from_rgb(242, 226, 192);
 
 /// Marge intérieure du cadre du menu de pause
-pub const MENU_PADDING: f32 = 18.0;
+pub(crate) const MENU_PADDING: f32 = 18.0;
 
 /// Défilement de la molette reçu cette frame, sans le lissage d'egui
-pub fn raw_scroll_delta(input: &egui::InputState) -> egui::Vec2 {
+pub(crate) fn raw_scroll_delta(input: &egui::InputState) -> egui::Vec2 {
     input
         .raw
         .events

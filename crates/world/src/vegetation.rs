@@ -324,7 +324,7 @@ fn first_tree_block(trees: impl Iterator<Item = Tree> + Clone, x: i32, y: i32, z
 
 /// Altitude du premier bloc d'air au-dessus du sol d'une colonne
 #[inline]
-pub fn column_ground(column: &ColumnSample) -> i32 {
+pub(crate) fn column_ground(column: &ColumnSample) -> i32 {
     column.elevation.floor() as i32
 }
 
@@ -350,7 +350,7 @@ impl PlanetWorldGenerator {
 
     /// L'arbre de la case (cx, cz) d'une face, s'il y en a un. `column` échantillonne une colonne
     /// (x, z) de la face (pour reprendre des colonnes déjà calculées).
-    pub fn tree_in_cell_with(
+    pub(crate) fn tree_in_cell_with(
         &self,
         face: PlanetFace,
         cx: i32,
@@ -511,7 +511,7 @@ impl PlanetWorldGenerator {
     }
 
     /// Bloc d'arbre en (x, y, z), en cherchant les arbres des cases voisines
-    pub fn column_tree_block(
+    pub(crate) fn column_tree_block(
         &self,
         x: i32,
         y: i32,
@@ -533,7 +533,7 @@ impl PlanetWorldGenerator {
     }
 
     /// Altitude juste au-dessus du plus haut bloc d'arbre de la colonne (x, z) (0 sans arbre)
-    pub fn column_tree_top(&self, x: i32, z: i32, tree_of: &mut impl FnMut(i32, i32) -> Option<Tree>) -> i32 {
+    pub(crate) fn column_tree_top(&self, x: i32, z: i32, tree_of: &mut impl FnMut(i32, i32) -> Option<Tree>) -> i32 {
         let mut top = 0;
         for cz in cell_span(z..z + 1) {
             for cx in cell_span(x..x + 1) {
@@ -548,7 +548,7 @@ impl PlanetWorldGenerator {
 
     /// Plante posée sur le sol de la colonne (herbe haute, fleur, champignon, buisson mort), selon
     /// le biome, si son dessus est de l'herbe (ou du sable au désert)
-    pub fn ground_plant(&self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> Option<BlockId> {
+    pub(crate) fn ground_plant(&self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> Option<BlockId> {
         // Rien ne pousse sur une rue, un champ ou dans une maison
         if self.is_built(face, x, z, 0) {
             return None;

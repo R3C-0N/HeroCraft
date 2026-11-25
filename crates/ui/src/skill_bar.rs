@@ -59,7 +59,7 @@ impl SkillBar {
     }
 
     /// Case où est posée `id`
-    pub fn slot_of(&self, id: &str) -> Option<usize> {
+    pub(crate) fn slot_of(&self, id: &str) -> Option<usize> {
         self.slots.iter().position(|s| s.as_deref() == Some(id))
     }
 

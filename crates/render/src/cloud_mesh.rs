@@ -99,7 +99,7 @@ pub fn cloud_visibility(rank: f32, cover: f32) -> f32 {
 }
 
 /// Masque d'occupation 11x11 d'un groupe de nuages (bit = y * 11 + x)
-pub type CloudMask = u128;
+pub(crate) type CloudMask = u128;
 
 /// Générateur des nuages : boîtes englobantes contenant chacune un masque 11x11 de cellules,
 /// rendu par sphere tracing d'un SDF arrondi (coussin) dans le shader.
@@ -109,18 +109,18 @@ impl CloudMeshGenerator {
     /// Hauteur d'un bloc dans les unités du prototype (rayon 25, 1 024 blocs par face), celles de
     /// toutes les altitudes ci-dessous (multipliées ensuite par `block_scale`)
     #[cfg(test)]
-    pub const BLOCK_HEIGHT: f32 = std::f32::consts::PI * 25.0 / 2048.0;
+    pub(crate) const BLOCK_HEIGHT: f32 = std::f32::consts::PI * 25.0 / 2048.0;
     /// Milieu de la couche nuageuse au-dessus du rayon de base : 391 blocs au-dessus du fond du
     /// monde, la dalle commençant à 375. Les plus hauts sommets plafonnent à 350 blocs
     /// (`generator.rs`) : les nuages ne traversent plus les montagnes. Repris en dur dans
     /// cloud_shader.wgsl (`CLOUD_LAYER_MID`).
-    pub const CLOUD_ALTITUDE_MID: f32 = 15.0;
+    pub(crate) const CLOUD_ALTITUDE_MID: f32 = 15.0;
     /// Bas de la couche nuageuse
     #[cfg(test)]
-    pub const CLOUD_ALTITUDE_BOT: f32 = Self::CLOUD_ALTITUDE_MID - Self::CLOUD_HALF_DEPTH;
+    pub(crate) const CLOUD_ALTITUDE_BOT: f32 = Self::CLOUD_ALTITUDE_MID - Self::CLOUD_HALF_DEPTH;
     /// Haut de la couche nuageuse (dalle de 1.2, soit 31 blocs d'épaisseur)
     #[cfg(test)]
-    pub const CLOUD_ALTITUDE_TOP: f32 = Self::CLOUD_ALTITUDE_MID + Self::CLOUD_HALF_DEPTH;
+    pub(crate) const CLOUD_ALTITUDE_TOP: f32 = Self::CLOUD_ALTITUDE_MID + Self::CLOUD_HALF_DEPTH;
 
     /// Vitesse angulaire du vent qui fait tourner la couche autour de l'axe Y, en radians par
     /// seconde de ciel (cloud_shader.wgsl et weather.rs). 0,0003 : environ 1,7 bloc par seconde
@@ -128,7 +128,7 @@ impl CloudMeshGenerator {
     pub const WIND_SPEED: f32 = 0.0003;
 
     /// Demi-épaisseur des nuages (dalle de 1.2)
-    pub const CLOUD_HALF_DEPTH: f32 = 0.60;
+    pub(crate) const CLOUD_HALF_DEPTH: f32 = 0.60;
 
     /// Nombre de secteurs par côté de face (au plus un groupe de nuages par secteur)
     /// 3 sur le prototype de 1 024 blocs par face. Sur une planète plus grande, la couche de nuages
@@ -136,7 +136,7 @@ impl CloudMeshGenerator {
     /// 3/4 de secteurs par bloc de face en plus gardent l'écart du prototype entre deux nuages
     /// (330 blocs environ). Vers les coins des faces, où les secteurs se resserrent encore, les
     /// nuages sont tirés plus petits (`sector_max_radius`) : deux nuages ne se touchent jamais.
-    pub const SECTORS_PER_FACE: usize =
+    pub(crate) const SECTORS_PER_FACE: usize =
         if herocraft_world::FACE_SCALE <= 1.0 { 3 } else { (2.25 * herocraft_world::FACE_SCALE) as usize };
     /// Côté de la grille d'occupation d'un nuage
     pub const GRID: usize = 11;
@@ -295,7 +295,7 @@ impl CloudMeshGenerator {
     }
 
     #[inline]
-    pub fn mask_get(mask: CloudMask, x: i32, y: i32) -> bool {
+    pub(crate) fn mask_get(mask: CloudMask, x: i32, y: i32) -> bool {
         let g = Self::GRID as i32;
         x >= 0 && y >= 0 && x < g && y < g && (mask >> (y * g + x)) & 1 == 1
     }
@@ -311,7 +311,7 @@ impl CloudMeshGenerator {
     }
 
     /// Distance du centre au coin le plus éloigné de l'emprise
-    pub fn mask_radius(mask: CloudMask) -> f32 {
+    pub(crate) fn mask_radius(mask: CloudMask) -> f32 {
         let b = Self::mask_bbox(mask);
         (b[0].abs().max(b[2].abs()).powi(2) + b[1].abs().max(b[3].abs()).powi(2)).sqrt()
     }
@@ -347,7 +347,7 @@ impl CloudMeshGenerator {
     /// Tire un masque 11x11 : un bruit de valeur lissé, modulé par une enveloppe elliptique
     /// de taille aléatoire (petits, moyens et grands nuages), puis nettoyé :
     /// pas de cellules isolées, pas de filaments d'une cellule, pas de contact uniquement diagonal.
-    pub fn random_mask(rng: &mut u64) -> CloudMask {
+    pub(crate) fn random_mask(rng: &mut u64) -> CloudMask {
         let g = Self::GRID as i32;
 
         // Enveloppe : union de 1 à 4 lobes elliptiques ; la taille globale varie
@@ -412,7 +412,7 @@ impl CloudMeshGenerator {
 
     /// Ouverture 2x2 (une cellule n'est gardée que si elle appartient à un bloc 2x2 plein)
     /// puis comblement des contacts uniquement diagonaux
-    pub fn clean_mask(raw: CloudMask) -> CloudMask {
+    pub(crate) fn clean_mask(raw: CloudMask) -> CloudMask {
         let g = Self::GRID as i32;
         let block = |x: i32, y: i32| {
             Self::mask_get(raw, x, y) && Self::mask_get(raw, x + 1, y) && Self::mask_get(raw, x, y + 1) && Self::mask_get(raw, x + 1, y + 1)

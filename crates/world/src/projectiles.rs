@@ -165,7 +165,7 @@ impl CreatureWorld {
     }
 
     /// Lance le tir d'une compétence ; ses touches sont rendues par `take_contacts`
-    pub fn launch_skill_shot(&mut self, shot: SkillShot) -> ProjectileId {
+    pub(crate) fn launch_skill_shot(&mut self, shot: SkillShot) -> ProjectileId {
         let block = self.geometry.block_height as f32;
         let id = self.next_projectile_id();
         let direction = shot.direction.normalize_or_zero();
@@ -194,7 +194,7 @@ impl CreatureWorld {
     }
 
     /// Les défenses des joueurs contre les tirs, pour les instants qui suivent
-    pub fn set_guards(&mut self, guards: Vec<PlayerGuard>) {
+    pub(crate) fn set_guards(&mut self, guards: Vec<PlayerGuard>) {
         self.guards = guards;
     }
 
@@ -204,7 +204,7 @@ impl CreatureWorld {
     }
 
     /// Touches et fins des tirs de compétence depuis le dernier appel
-    pub fn take_contacts(&mut self) -> Vec<SkillContact> {
+    pub(crate) fn take_contacts(&mut self) -> Vec<SkillContact> {
         std::mem::take(&mut self.contacts)
     }
 

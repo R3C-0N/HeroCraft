@@ -492,7 +492,7 @@ impl Server {
 
     /// Change l'heure ou le temps imposé pour tous (`/time set`, `/season`, `/weather`), et le
     /// fait savoir à chacun
-    pub fn set_sky(&mut self, time: Option<f64>, forced: Option<Option<herocraft_common::WeatherKind>>) {
+    pub(crate) fn set_sky(&mut self, time: Option<f64>, forced: Option<Option<herocraft_common::WeatherKind>>) {
         if let Some(time) = time.filter(|t| t.is_finite() && *t >= 0.0) {
             self.clock.time = time;
         }

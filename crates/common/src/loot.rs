@@ -77,7 +77,7 @@ pub enum LootError {
 }
 
 /// Vérifie qu'une liste de butin tient debout (sans regarder si les objets existent)
-pub fn check_entries(entries: &[LootEntry]) -> Result<(), LootError> {
+pub(crate) fn check_entries(entries: &[LootEntry]) -> Result<(), LootError> {
     for entry in entries {
         if !(entry.chance > 0.0 && entry.chance <= 1.0) {
             return Err(LootError::Chance(entry.item.clone()));
@@ -167,7 +167,7 @@ impl LootRng {
     }
 
     /// Nombre dans [0, 1)
-    pub fn next_f32(&mut self) -> f32 {
+    pub(crate) fn next_f32(&mut self) -> f32 {
         (self.next_u64() >> 40) as f32 / (1u64 << 24) as f32
     }
 }

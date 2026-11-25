@@ -307,14 +307,14 @@ impl PlanetMesh {
 
     /// Applique un facteur d'opacité/fondu alpha à tous les sommets du maillage
     #[allow(dead_code)]
-    pub fn set_alpha(&mut self, alpha: f32) {
+    pub(crate) fn set_alpha(&mut self, alpha: f32) {
         for v in &mut self.vertices {
             v.color[3] = alpha;
         }
     }
     /// Construit le maillage complet de la planète Cubed-Sphere avec relief en colonnes voxels à 90° et biomes
     #[allow(dead_code)]
-    pub fn generate_planet(
+    pub(crate) fn generate_planet(
         generator: &PlanetWorldGenerator,
         base_radius: f32,
         grid_resolution: usize,
@@ -338,7 +338,7 @@ impl PlanetMesh {
 
     /// Palette de couleurs enrichie avec gradation altimétrique et bathymétrique
     /// Fait ressortir les fosses océaniques (bleu nuit abyssal très contrasté) et les massifs/super-chaînes de montagnes (ardoise sombre -> granite -> cimes éclatantes)
-    pub fn relief_biome_color(biome: BiomeType, raw_elevation: f64) -> [f32; 4] {
+    pub(crate) fn relief_biome_color(biome: BiomeType, raw_elevation: f64) -> [f32; 4] {
         // Enneigement strict au-dessus de 300 blocs pour n'importe quel relief continental
         if !biome.is_water() && raw_elevation >= 300.0 {
             let t = ((raw_elevation - 300.0) / 50.0).clamp(0.0, 1.0) as f32;
@@ -486,7 +486,7 @@ impl PlanetMesh {
     }
 
     /// Palette de couleurs de base selon le biome (utilisée comme repli)
-    pub fn biome_color(biome: BiomeType) -> [f32; 4] {
+    pub(crate) fn biome_color(biome: BiomeType) -> [f32; 4] {
         match biome {
             // Zones maritimes (Océans et Mers)
             BiomeType::DeepOcean => [0.03, 0.10, 0.38, 1.0], // Bleu abyssal profond
@@ -507,7 +507,7 @@ impl PlanetMesh {
     }
 
     /// Calcule la couleur avec transparence pour le filtre tectonique au-dessus du relief naturel
-    pub fn blend_tectonic_color(base_color: [f32; 4], sample: &herocraft_world::TectonicSample) -> [f32; 4] {
+    pub(crate) fn blend_tectonic_color(base_color: [f32; 4], sample: &herocraft_world::TectonicSample) -> [f32; 4] {
         // Sur les lignes de failles (< 0.12), l'accent est marqué (80%),
         // au cœur des plaques, transparence douce (35%) pour laisser voir les continents, mers et biomes
         let alpha = if sample.dist_to_boundary < 0.12 {
@@ -524,7 +524,7 @@ impl PlanetMesh {
     }
 
     /// Construit le maillage d'un patch LOD sous forme de colonnes voxels avec falaises à 90°
-    pub fn generate_lod_patch(
+    pub(crate) fn generate_lod_patch(
         generator: &PlanetWorldGenerator,
         key: &herocraft_world::QuadNodeKey,
         base_radius: f32,

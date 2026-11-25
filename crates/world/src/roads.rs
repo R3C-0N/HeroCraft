@@ -247,7 +247,7 @@ impl RoadMap {
 /// Bloc posé par un chemin en (x, y, z), `ground` étant le premier bloc d'air au-dessus du relief :
 /// le chemin remplace le dessus du sol, sauf sous la mer
 #[inline]
-pub fn road_block(surface: BlockId, y: i32, ground: i32) -> Option<BlockId> {
+pub(crate) fn road_block(surface: BlockId, y: i32, ground: i32) -> Option<BlockId> {
     (y == ground - 1 && ground as f64 > SEA_LEVEL_BLOCKS).then_some(surface)
 }
 

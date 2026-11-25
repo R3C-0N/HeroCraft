@@ -11,7 +11,7 @@ use herocraft_world::{BlockGeometry, BlockPos, PlanetWorldGenerator, TerrainEdit
 /// Au-delà, le cache de colonnes est vidé (le joueur ne touche qu'une poignée de colonnes par image)
 const MAX_CACHED_COLUMNS: usize = 8192;
 
-pub struct VoxelCollider {
+pub(crate) struct VoxelCollider {
     edits: Arc<TerrainEdits>,
     geometry: BlockGeometry,
     /// Colonnes du générateur déjà échantillonnées : le bruit coûte cher, le joueur reste sur place
@@ -19,12 +19,12 @@ pub struct VoxelCollider {
 }
 
 impl VoxelCollider {
-    pub fn new(edits: Arc<TerrainEdits>, base_radius: f32) -> Self {
+    pub(crate) fn new(edits: Arc<TerrainEdits>, base_radius: f32) -> Self {
         Self { edits, geometry: BlockGeometry::new(base_radius as f64), columns: RefCell::new(Default::default()) }
     }
 
     /// Hauteur d'un bloc en unités du monde
-    pub fn block_height(&self) -> f32 {
+    pub(crate) fn block_height(&self) -> f32 {
         self.geometry.block_height as f32
     }
 
@@ -48,7 +48,7 @@ impl VoxelCollider {
     /// pas les pieds de plus de `step` blocs (une marche franchissable). Une dalle, un escalier
     /// portent au dessus de leur pavé sous le point ; là où leurs pavés laissent un vide, le sol est
     /// plus bas.
-    pub fn ground_radius(&self, generator: &PlanetWorldGenerator, p: Vec3, step: f32) -> f32 {
+    pub(crate) fn ground_radius(&self, generator: &PlanetWorldGenerator, p: Vec3, step: f32) -> f32 {
         let Some((pos, local)) = self.geometry.locate(p.as_dvec3()) else {
             return self.geometry.base_radius as f32;
         };
@@ -83,7 +83,7 @@ impl VoxelCollider {
     }
 
     /// Rayon du dessus de la colonne entière sous une direction (plus haut bloc porteur du monde)
-    pub fn column_top_radius(&self, generator: &PlanetWorldGenerator, dir: Vec3) -> f32 {
+    pub(crate) fn column_top_radius(&self, generator: &PlanetWorldGenerator, dir: Vec3) -> f32 {
         let Some(pos) = self.geometry.block_at_point(dir.normalize().as_dvec3() * self.geometry.base_radius) else {
             return self.geometry.base_radius as f32;
         };
@@ -93,14 +93,14 @@ impl VoxelCollider {
 
     /// Rayon du dessus du plus haut bloc porteur de chaque colonne `(x, z)` de la face `face`
     /// (là où s'arrête la pluie), en une seule lecture du terrain
-    pub fn support_tops(&self, generator: &PlanetWorldGenerator, face: PlanetFace, columns: &[(i32, i32)]) -> Vec<f32> {
+    pub(crate) fn support_tops(&self, generator: &PlanetWorldGenerator, face: PlanetFace, columns: &[(i32, i32)]) -> Vec<f32> {
         let tops: Vec<i32> = self.with_query(generator, |q| columns.iter().map(|&(x, z)| q.support_top(face, x, z, WORLD_HEIGHT - 1)).collect());
         tops.into_iter().map(|y| self.radius_of_altitude(y)).collect()
     }
 
     /// Rayon du sol pour un point libre (caméra) : s'il est dans un bloc porteur, le dessus de la pile
     /// de blocs qui le contient, sinon le dessus du premier bloc porteur en dessous.
-    pub fn point_ground_radius(&self, generator: &PlanetWorldGenerator, p: Vec3) -> f32 {
+    pub(crate) fn point_ground_radius(&self, generator: &PlanetWorldGenerator, p: Vec3) -> f32 {
         let Some(pos) = self.geometry.block_at_point(p.as_dvec3()) else {
             return self.geometry.base_radius as f32;
         };
@@ -115,7 +115,7 @@ impl VoxelCollider {
     }
 
     /// Bloc qui contient le point `p` (l'air hors de la grille)
-    pub fn block_at(&self, generator: &PlanetWorldGenerator, p: Vec3) -> BlockId {
+    pub(crate) fn block_at(&self, generator: &PlanetWorldGenerator, p: Vec3) -> BlockId {
         match self.geometry.block_at_point(p.as_dvec3()) {
             Some(pos) if pos.is_valid() => self.with_query(generator, |q| q.block(pos)),
             _ => BlockId::AIR,
@@ -124,7 +124,7 @@ impl VoxelCollider {
 
     /// Premier bloc qui se grimpe (échelle) contenant l'un des points : le centre de sa plaque, dans
     /// l'espace monde (le joueur grimpe en la poussant)
-    pub fn climbable_at(&self, generator: &PlanetWorldGenerator, points: &[Vec3]) -> Option<Vec3> {
+    pub(crate) fn climbable_at(&self, generator: &PlanetWorldGenerator, points: &[Vec3]) -> Option<Vec3> {
         self.with_query(generator, |q| {
             points.iter().find_map(|p| {
                 let pos = self.geometry.block_at_point(p.as_dvec3()).filter(|pos| pos.is_valid())?;
@@ -146,7 +146,7 @@ impl VoxelCollider {
 
     /// Un des points est dans la matière d'un bloc qui arrête le corps (ni air, ni eau ; les
     /// pavés seuls d'une dalle ou d'un escalier)
-    pub fn any_solid(&self, generator: &PlanetWorldGenerator, points: &[Vec3]) -> bool {
+    pub(crate) fn any_solid(&self, generator: &PlanetWorldGenerator, points: &[Vec3]) -> bool {
         self.with_query(generator, |q| {
             points.iter().any(|p| {
                 self.geometry.locate(DVec3::new(p.x as f64, p.y as f64, p.z as f64)).is_some_and(|(pos, local)| {

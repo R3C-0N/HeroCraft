@@ -2,12 +2,12 @@
 //! reculer l'horizon (common.wgsl, `flatten_point`).
 
 /// Plus haut relief (en blocs au-dessus de la mer) pris en compte pour borner l'aplatissement
-pub const FLATTEN_MOUNTAIN_BLOCKS: f32 = 150.0;
+pub(crate) const FLATTEN_MOUNTAIN_BLOCKS: f32 = 150.0;
 
 /// Altitudes de l'œil au-dessus de la mer (en blocs) entre lesquelles l'aplatissement s'efface :
 /// complet en dessous, vraie courbure au-dessus. Vue de haut, la planète entière est visible et
 /// n'a plus besoin d'être aplatie : le dézoom vers l'orbite la ramène doucement à sa forme.
-pub const FLATTEN_FADE_BLOCKS: (f32, f32) = (40.0, 400.0);
+pub(crate) const FLATTEN_FADE_BLOCKS: (f32, f32) = (40.0, 400.0);
 
 /// Rayon apparent de la planète vue du sol, en multiple de son vrai rayon (k >= 1).
 ///

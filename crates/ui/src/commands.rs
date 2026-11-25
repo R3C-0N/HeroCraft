@@ -65,14 +65,14 @@ pub enum Command {
 }
 
 /// Une commande : nom, arguments, description (affichés par `/help`)
-pub struct CommandHelp {
+pub(crate) struct CommandHelp {
     pub name: &'static str,
     pub usage: &'static str,
     pub description: &'static str,
 }
 
 /// Toutes les commandes, dans l'ordre de `/help`
-pub const COMMANDS: &[CommandHelp] = &[
+pub(crate) const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "help", usage: "/help [command]", description: "List the commands, or explain one" },
     CommandHelp { name: "tp", usage: "/tp <latitude> <longitude> [height] | /tp <player>", description: "Teleport to the ground at a latitude and longitude (degrees), optionally some blocks above it, or next to a player" },
     CommandHelp { name: "spawn", usage: "/spawn", description: "Go back to the spawn point" },
@@ -99,12 +99,12 @@ pub const COMMANDS: &[CommandHelp] = &[
 ];
 
 /// Exemplaires au plus d'un `/give`, de créatures d'un `/summon`, et vitesse maximale
-pub const MAX_GIVE: u16 = 64 * 36;
+pub(crate) const MAX_GIVE: u16 = 64 * 36;
 pub const MAX_SUMMON: u32 = 20;
 /// Exemplaires au plus d'un `/drop`
-pub const MAX_DROP: u16 = 64;
-pub const MAX_SPEED: f32 = 20.0;
-pub const MAX_XP: u64 = 1_000_000;
+pub(crate) const MAX_DROP: u16 = 64;
+pub(crate) const MAX_SPEED: f32 = 20.0;
+pub(crate) const MAX_XP: u64 = 1_000_000;
 
 /// Lit une ligne de chat qui commence par « / ». Renvoie le message d'erreur à afficher sinon.
 pub fn parse(line: &str) -> Result<Command, String> {
@@ -208,7 +208,7 @@ fn number(text: &str) -> Option<f32> {
 }
 
 /// Heure de 0 à 24 : « 14 », « 6.5 », « 18:30 » ou un mot (noon, night…)
-pub fn parse_hour(text: &str) -> Option<f32> {
+pub(crate) fn parse_hour(text: &str) -> Option<f32> {
     let named = match text.to_lowercase().as_str() {
         "sunrise" | "dawn" => Some(6.0),
         "day" | "morning" => Some(8.0),

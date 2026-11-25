@@ -12,17 +12,17 @@ use crate::camera::OrbitCamera;
 /// Après épuisement, le sprint revient quand l'endurance remonte à cette fraction du maximum
 const SPRINT_RECOVERY: f32 = 0.25;
 /// Temps passé sur l'écran de mort avant de pouvoir réapparaître, en secondes
-pub const RESPAWN_DELAY: f32 = 2.0;
+pub(crate) const RESPAWN_DELAY: f32 = 2.0;
 
 /// Mort du joueur, en attente de sa réapparition
 #[derive(Debug, Clone)]
-pub struct Death {
+pub(crate) struct Death {
     pub at: Instant,
     /// Ce qui l'a tué, affiché sur l'écran de mort
     pub cause: String,
 }
 
-pub struct PlayerStats {
+pub(crate) struct PlayerStats {
     pub stats: CharacterStats,
     /// Dernière blessure, pour le voile rouge du HUD
     pub hurt_at: Option<Instant>,
@@ -66,7 +66,7 @@ impl Default for PlayerStats {
 impl PlayerStats {
     /// Nouveau personnage dont la progression est reprise de `path` (s'il existe) et y sera
     /// enregistrée ; sans chemin (en ligne), un personnage neuf en attendant le serveur
-    pub fn load_or_default(path: Option<PathBuf>) -> Self {
+    pub(crate) fn load_or_default(path: Option<PathBuf>) -> Self {
         let mut player = Self::default();
         if let Some(saved) = path.as_deref().and_then(read_progress) {
             let stats = &mut player.stats;
@@ -89,7 +89,7 @@ impl PlayerStats {
     }
 
     /// Enregistre la progression du monde solo (rien en ligne)
-    pub fn save(&self) {
+    pub(crate) fn save(&self) {
         let Some(path) = &self.progress_path else { return };
         let saved = SavedProgress {
             level: self.stats.level,
@@ -110,14 +110,14 @@ impl PlayerStats {
     }
 
     /// En solo, le héros entre dans la vision en simple soldat : ses compétences sont mises de côté
-    pub fn enter_vision(&mut self) {
+    pub(crate) fn enter_vision(&mut self) {
         if self.present_skills.is_none() {
             self.present_skills = Some(herocraft_common::vision::PresentSkills::set_aside(&mut self.stats));
         }
     }
 
     /// En solo, il revient de la vision et retrouve ses compétences du présent
-    pub fn leave_vision(&mut self) {
+    pub(crate) fn leave_vision(&mut self) {
         if let Some(present) = self.present_skills.take() {
             present.restore(&mut self.stats);
         }
@@ -125,7 +125,7 @@ impl PlayerStats {
 
     /// En solo, il revient d'une vision achevée : ses compétences du présent, plus celles que
     /// l'éclat a éveillées
-    pub fn leave_vision_with_power(&mut self) {
+    pub(crate) fn leave_vision_with_power(&mut self) {
         if let Some(present) = self.present_skills.take() {
             present.keep_awakened(&mut self.stats);
         }
@@ -133,7 +133,7 @@ impl PlayerStats {
 
     /// Avance les jauges de `dt` secondes (le sprint consomme l'endurance) et coupe le sprint du
     /// joueur épuisé jusqu'à ce qu'il ait repris son souffle
-    pub fn tick(&mut self, dt: f32, camera: &mut OrbitCamera) {
+    pub(crate) fn tick(&mut self, dt: f32, camera: &mut OrbitCamera) {
         if self.is_dead() {
             self.check_revived();
             return;
@@ -152,19 +152,19 @@ impl PlayerStats {
 
     /// Mange un aliment qui rend `satiety` points : faux si le joueur est mort ou n'a plus faim
     /// (l'aliment reste alors dans l'inventaire)
-    pub fn eat(&mut self, satiety: f32) -> bool {
+    pub(crate) fn eat(&mut self, satiety: f32) -> bool {
         !self.is_dead() && self.stats.eat(satiety)
     }
 
     /// Dommages d'une chute de `blocks` blocs : renvoie la force de la blessure (0 si la chute
     /// est sans mal). S'il en meurt, le joueur reste mort jusqu'à `respawn`.
-    pub fn fall(&mut self, blocks: f32) -> f32 {
+    pub(crate) fn fall(&mut self, blocks: f32) -> f32 {
         self.hurt(fall_damage(blocks), None, || format!("Chute de {:.0} blocs", blocks))
     }
 
     /// Dommages d'une créature (`cause` : son nom) : renvoie la force de la blessure
     /// (`kind` : le type du coup, que les boucliers typés distinguent)
-    pub fn bitten(&mut self, damage: f32, kind: Option<herocraft_common::DamageKind>, cause: &str) -> f32 {
+    pub(crate) fn bitten(&mut self, damage: f32, kind: Option<herocraft_common::DamageKind>, cause: &str) -> f32 {
         self.hurt(damage, kind, || format!("Tué par : {cause}"))
     }
 
@@ -186,7 +186,7 @@ impl PlayerStats {
     }
 
     /// Tombé à zéro point de vie hors d'un coup (un saignement) : il reste mort jusqu'à `respawn`
-    pub fn bled_out(&mut self) {
+    pub(crate) fn bled_out(&mut self) {
         if self.is_dead() {
             return;
         }
@@ -198,17 +198,17 @@ impl PlayerStats {
         self.revived_seen = self.stats.revived;
     }
 
-    pub fn is_dead(&self) -> bool {
+    pub(crate) fn is_dead(&self) -> bool {
         self.death.is_some()
     }
 
     /// Secondes restantes avant de pouvoir réapparaître (0 : c'est possible), `None` en vie
-    pub fn respawn_in(&self) -> Option<f32> {
+    pub(crate) fn respawn_in(&self) -> Option<f32> {
         self.death.as_ref().map(|d| (RESPAWN_DELAY - d.at.elapsed().as_secs_f32()).max(0.0))
     }
 
     /// Retour à la vie, jauges pleines (le joueur reste à replacer au point d'apparition)
-    pub fn respawn(&mut self) {
+    pub(crate) fn respawn(&mut self) {
         self.respawned_at = Some(Instant::now());
         self.death = None;
         self.hurt_at = None;
@@ -232,7 +232,7 @@ impl PlayerStats {
 
     /// Statistiques reçues du serveur (un joueur mort le reste ici jusqu'à sa réapparition, même
     /// si le serveur l'a déjà ranimé)
-    pub fn sync(&mut self, stats: CharacterStats, camera: &mut OrbitCamera) {
+    pub(crate) fn sync(&mut self, stats: CharacterStats, camera: &mut OrbitCamera) {
         self.stats = stats;
         // Le serveur le dit tombé sans qu'un coup l'ait annoncé : un saignement l'a vidé
         let fresh = self.respawned_at.is_some_and(|at| at.elapsed().as_secs_f32() < 2.0);

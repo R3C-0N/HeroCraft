@@ -73,7 +73,7 @@ const GROUP_SPREAD: i32 = 3;
 /// Premier identifiant des bêtes posées à la main : celles des zones sont numérotées par zone en dessous
 const MANUAL_ID_BASE: u64 = 1 << 48;
 /// Nom du fichier de la population dans le dossier de sauvegarde d'un monde
-pub const POPULATION_FILE: &str = "creatures.json";
+pub(crate) const POPULATION_FILE: &str = "creatures.json";
 /// Chute, en blocs par seconde²
 const GRAVITY: f32 = 20.0;
 /// Hauteur de marche franchie d'un saut, en blocs
@@ -546,7 +546,7 @@ impl Creature {
     }
 
     /// Elle poursuit une cible
-    pub fn is_hunting(&self) -> bool {
+    pub(crate) fn is_hunting(&self) -> bool {
         self.hunting
     }
 
@@ -842,7 +842,7 @@ impl CreatureWorld {
     }
 
     /// Comme `spawn`, mais dans le troupeau `herd` (`None` : elle en commence un nouveau)
-    pub fn spawn_in_herd(&mut self, species: usize, feet: Vec3, herd: Option<u64>) -> CreatureId {
+    pub(crate) fn spawn_in_herd(&mut self, species: usize, feet: Vec3, herd: Option<u64>) -> CreatureId {
         let id = CreatureId(self.next_id);
         self.next_id += 1;
         let health = self.registry.get(species).map_or(1.0, |s| s.health);
@@ -1068,7 +1068,7 @@ impl CreatureWorld {
     /// Comme `hit`, par le joueur de clé `player` (celle passée à `tick_players`) : s'il frappe un
     /// habitant, les gardes de sa ville s'en prennent à lui un moment ; s'il le tue, ceux des
     /// environs le recherchent longtemps
-    pub fn hit_by(&mut self, id: CreatureId, from: Vec3, player: PlayerId) -> bool {
+    pub(crate) fn hit_by(&mut self, id: CreatureId, from: Vec3, player: PlayerId) -> bool {
         self.wound(id, from, player, PLAYER_HIT_DAMAGE).is_some()
     }
 
@@ -1079,7 +1079,7 @@ impl CreatureWorld {
     }
 
     /// Comme `wound`, pour un coup de type `kind` qui ignore la part `pierce` de l'armure
-    pub fn wound_with(&mut self, id: CreatureId, from: Vec3, player: PlayerId, damage: f32, kind: DamageKind, pierce: f32) -> Option<bool> {
+    pub(crate) fn wound_with(&mut self, id: CreatureId, from: Vec3, player: PlayerId, damage: f32, kind: DamageKind, pierce: f32) -> Option<bool> {
         let damage = damage * (1.0 - self.guard_against(id, from));
         let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
         let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
@@ -1146,7 +1146,7 @@ impl CreatureWorld {
 
     /// Entités qu'un piège a fait apparaître depuis le dernier appel : invocateur, identifiant et
     /// secondes avant qu'elles disparaissent
-    pub fn take_spawned(&mut self) -> Vec<(PlayerId, CreatureId, f32)> {
+    pub(crate) fn take_spawned(&mut self) -> Vec<(PlayerId, CreatureId, f32)> {
         std::mem::take(&mut self.spawned)
     }
 
@@ -1173,7 +1173,7 @@ impl CreatureWorld {
     }
 
     /// Aveugle la créature `id` pendant `duration` secondes : elle ne voit plus qu'à `BLIND_SIGHT` blocs
-    pub fn blind(&mut self, id: CreatureId, duration: f32) {
+    pub(crate) fn blind(&mut self, id: CreatureId, duration: f32) {
         if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
             c.blind = c.blind.max(duration);
         }
@@ -1265,7 +1265,7 @@ impl CreatureWorld {
 
     /// Part des dégâts d'un coup venu de `from` que la garde de la créature `id` retire : celle de
     /// son espèce si le coup arrive de face, et qu'elle n'est ni étourdie ni brisée
-    pub fn guard_against(&self, id: CreatureId, from: Vec3) -> f32 {
+    pub(crate) fn guard_against(&self, id: CreatureId, from: Vec3) -> f32 {
         let Some(c) = self.creatures.iter().find(|c| c.id == id && c.is_alive()) else { return 0.0 };
         let Some(guard) = self.registry.get(c.species).and_then(|s| s.guard) else { return 0.0 };
         if c.stun > 0.0 || c.guard_broken > 0.0 {
@@ -1301,7 +1301,7 @@ impl CreatureWorld {
     }
 
     /// Repousse la créature `id` loin de `from` à `speed` blocs par seconde (négative : l'attire)
-    pub fn shove(&mut self, id: CreatureId, from: Vec3, speed: f32) {
+    pub(crate) fn shove(&mut self, id: CreatureId, from: Vec3, speed: f32) {
         let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return };
         let up = c.position.normalize_or_zero();
         let away = c.position - from;
@@ -1363,7 +1363,7 @@ impl CreatureWorld {
     }
 
     /// Le joueur de clé `player` est recherché par les gardes du troupeau `herd`
-    pub fn is_wanted(&self, player: PlayerId, herd: u64) -> bool {
+    pub(crate) fn is_wanted(&self, player: PlayerId, herd: u64) -> bool {
         self.wanted.iter().any(|w| w.0 == player && w.1 == herd)
     }
 
@@ -2122,7 +2122,7 @@ impl CreatureWorld {
     }
 
     /// Donne à la créature invoquée `id` l'allure d'une autre (`CreatureState::copy`)
-    pub fn set_copy(&mut self, id: CreatureId, copy: u32) {
+    pub(crate) fn set_copy(&mut self, id: CreatureId, copy: u32) {
         if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id) {
             c.copy = Some(copy);
         }
@@ -2134,7 +2134,7 @@ impl CreatureWorld {
     }
 
     /// Fait disparaître une entité invoquée (fin de sa durée, ou remplacée par une plus récente)
-    pub fn dismiss(&mut self, id: CreatureId) {
+    pub(crate) fn dismiss(&mut self, id: CreatureId) {
         self.creatures.retain(|c| !(c.id == id && c.summoner.is_some()));
     }
 

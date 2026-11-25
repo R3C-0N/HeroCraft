@@ -19,13 +19,13 @@ use serde::{Deserialize, Serialize};
 use crate::edits::FACE_BLOCKS;
 
 /// Côté d'une zone de population, en blocs
-pub const ZONE_BLOCKS: i32 = 32;
+pub(crate) const ZONE_BLOCKS: i32 = 32;
 /// Zones par arête de face
-pub const FACE_ZONES: i32 = FACE_BLOCKS / ZONE_BLOCKS;
+pub(crate) const FACE_ZONES: i32 = FACE_BLOCKS / ZONE_BLOCKS;
 
 /// Une zone de population : face du cube et rang de la zone le long de x et de z
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ZoneKey {
+pub(crate) struct ZoneKey {
     pub face: PlanetFace,
     pub x: i32,
     pub z: i32,
@@ -33,25 +33,25 @@ pub struct ZoneKey {
 
 impl ZoneKey {
     /// La zone qui contient la colonne de blocs (x, z)
-    pub fn of_column(face: PlanetFace, x: i32, z: i32) -> Self {
+    pub(crate) fn of_column(face: PlanetFace, x: i32, z: i32) -> Self {
         Self { face, x: x.div_euclid(ZONE_BLOCKS), z: z.div_euclid(ZONE_BLOCKS) }
     }
 
     /// Rang unique de la zone sur la planète, de 0 à 6 × `FACE_ZONES`²
-    pub fn index(&self) -> u64 {
+    pub(crate) fn index(&self) -> u64 {
         let face = PlanetFace::ALL.iter().position(|f| *f == self.face).unwrap_or(0) as u64;
         (face * FACE_ZONES as u64 + self.x as u64) * FACE_ZONES as u64 + self.z as u64
     }
 
     /// Toutes les zones de la planète
-    pub fn all() -> impl Iterator<Item = ZoneKey> {
+    pub(crate) fn all() -> impl Iterator<Item = ZoneKey> {
         PlanetFace::ALL
             .into_iter()
             .flat_map(|face| (0..FACE_ZONES).flat_map(move |x| (0..FACE_ZONES).map(move |z| ZoneKey { face, x, z })))
     }
 
     /// Graine du tirage de la population de cette zone, tirée de la graine du monde
-    pub fn seed(&self, world_seed: u64) -> u64 {
+    pub(crate) fn seed(&self, world_seed: u64) -> u64 {
         splitmix(world_seed ^ splitmix(self.index().wrapping_add(0x5EED_C2EA_7E25)))
     }
 }
@@ -65,7 +65,7 @@ fn splitmix(mut x: u64) -> u64 {
 
 /// Une bête endormie : de quoi la remettre exactement où elle était
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SleepingCreature {
+pub(crate) struct SleepingCreature {
     pub id: herocraft_common::CreatureId,
     /// Identifiant de son espèce (nom du fichier, ex. `vache`)
     pub species: String,
@@ -85,7 +85,7 @@ pub struct SleepingCreature {
 
 /// Zones dont la population a déjà été tirée, et bêtes des zones endormies
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct PopulationSave {
+pub(crate) struct PopulationSave {
     /// Prochain identifiant d'une bête posée à la main (commande, test)
     pub next_id: u64,
     /// Chaque zone déjà peuplée, avec ses bêtes (liste vide : toutes mortes ou parties)
@@ -94,7 +94,7 @@ pub struct PopulationSave {
 
 impl PopulationSave {
     /// Lit la sauvegarde, ou `None` s'il n'y en a pas encore
-    pub fn load(path: &Path) -> io::Result<Option<Self>> {
+    pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
         match fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map(Some).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -103,7 +103,7 @@ impl PopulationSave {
     }
 
     /// Écrit la sauvegarde d'un coup (fichier temporaire renommé) : une coupure ne la tronque pas
-    pub fn save(&self, path: &Path) -> io::Result<()> {
+    pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
         }
@@ -113,7 +113,7 @@ impl PopulationSave {
         fs::rename(&tmp, path)
     }
 
-    pub fn into_map(self) -> HashMap<ZoneKey, Vec<SleepingCreature>> {
+    pub(crate) fn into_map(self) -> HashMap<ZoneKey, Vec<SleepingCreature>> {
         self.zones.into_iter().collect()
     }
 }

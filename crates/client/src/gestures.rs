@@ -66,7 +66,7 @@ struct Key {
 
 /// Un geste prêt à jouer
 #[derive(Debug, Clone)]
-pub struct Gesture {
+pub(crate) struct Gesture {
     pub duration: f32,
     /// La marche s'arrête le temps du geste
     pub legs_locked: bool,
@@ -97,7 +97,7 @@ impl Gesture {
 
     /// La pose à l'instant `u` du geste (0 à 1), écrite dans `pose` ; `units_per_block` convertit
     /// les déplacements en unités du patron (`Figure::units_per_block`)
-    pub fn pose(&self, u: f32, units_per_block: f32, pose: &mut FigurePose) {
+    pub(crate) fn pose(&self, u: f32, units_per_block: f32, pose: &mut FigurePose) {
         let u = u.clamp(0.0, 1.0);
         let next = self.keys.iter().position(|k| k.t >= u).unwrap_or(self.keys.len() - 1).max(1);
         let (a, b) = (&self.keys[next - 1], &self.keys[next]);
@@ -114,13 +114,13 @@ impl Gesture {
 
 /// Tous les gestes, par nom
 #[derive(Debug, Default)]
-pub struct GestureLibrary {
+pub(crate) struct GestureLibrary {
     gestures: HashMap<String, Gesture>,
 }
 
 impl GestureLibrary {
     /// Les gestes de `assets/hero/animations/` ; un fichier invalide est signalé et ignoré
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         let Some(dir) = herocraft_common::skills::asset_dir(herocraft_common::skills::GESTURES_DIR) else {
             log::warn!("Dossier des gestes introuvable : le héros ne fera pas ses gestes.");
             return Self::default();
@@ -155,12 +155,12 @@ impl GestureLibrary {
         (Self { gestures }, errors)
     }
 
-    pub fn get(&self, name: &str) -> Option<&Gesture> {
+    pub(crate) fn get(&self, name: &str) -> Option<&Gesture> {
         self.gestures.get(name)
     }
 
     #[cfg(test)]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.gestures.len()
     }
 }

@@ -16,7 +16,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 /// Taille maximale d'un paquet : au-delà, la connexion est jugée corrompue
-pub const MAX_PACKET_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_PACKET_BYTES: usize = 16 * 1024 * 1024;
 
 /// Encode un paquet dans une trame prête à envoyer (taille puis contenu) : un paquet diffusé à
 /// tous les joueurs n'est encodé qu'une fois
@@ -29,7 +29,7 @@ pub fn encode_frame<T: Serialize>(packet: &T) -> Vec<u8> {
 }
 
 /// Lit une trame et la décode
-pub fn read_frame<R: Read, T: DeserializeOwned>(reader: &mut R) -> io::Result<T> {
+pub(crate) fn read_frame<R: Read, T: DeserializeOwned>(reader: &mut R) -> io::Result<T> {
     let mut len = [0u8; 4];
     reader.read_exact(&mut len)?;
     let len = u32::from_le_bytes(len) as usize;

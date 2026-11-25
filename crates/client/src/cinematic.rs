@@ -42,7 +42,7 @@ impl AnchorFrame {
 }
 
 /// Le lecteur de cinématiques du client
-pub struct Cinematics {
+pub(crate) struct Cinematics {
     pub player: CinematicPlayer,
     anchor: Option<AnchorFrame>,
     /// Monde dont `seen` est la liste des cinématiques déjà vues
@@ -50,19 +50,19 @@ pub struct Cinematics {
 }
 
 /// Émis par `fin-de-la-vision` : la Pierre obtenue est absorbée
-pub const VISION_ENDED: &str = "vision_ended";
+pub(crate) const VISION_ENDED: &str = "vision_ended";
 /// Envoyé à l'entrée dans la vision d'un temple (`l-eclat` s'y joue)
-pub const VISION_ENTERED: &str = "vision_entered";
+pub(crate) const VISION_ENTERED: &str = "vision_entered";
 /// Renvoyé par `l-eclat` : le temps s'arrête ; `TIME_RESUMED` le fait repartir
-pub const TIME_FROZEN: &str = "time_frozen";
-pub const TIME_RESUMED: &str = "time_resumed";
+pub(crate) const TIME_FROZEN: &str = "time_frozen";
+pub(crate) const TIME_RESUMED: &str = "time_resumed";
 /// Le tutoriel de la vision : l'éclat est ramassé, le soldat s'éveille en héros (`l-eveil`)
-pub const VISION_AWAKENED: &str = "vision_awakened";
+pub(crate) const VISION_AWAKENED: &str = "vision_awakened";
 /// La charge de la vision : le bélier a fait voler la grande porte en éclats (`la-porte-cede`)
-pub const GATE_BROKEN: &str = "gate_broken";
+pub(crate) const GATE_BROKEN: &str = "gate_broken";
 
 /// Le temps est-il figé après l'événement `event`, s'il l'était (`frozen`) avant ?
-pub fn frozen_after(event: &GameEvent, frozen: bool) -> bool {
+pub(crate) fn frozen_after(event: &GameEvent, frozen: bool) -> bool {
     match event.name.as_str() {
         TIME_FROZEN => true,
         TIME_RESUMED | VISION_ENDED => false,
@@ -71,22 +71,22 @@ pub fn frozen_after(event: &GameEvent, frozen: bool) -> bool {
 }
 
 /// Événement envoyé une fois, à la première image du jeu (la Genèse s'y joue)
-pub const LAUNCH_EVENT: &str = "game_launched";
+pub(crate) const LAUNCH_EVENT: &str = "game_launched";
 
 /// Fichier des cinématiques déjà vues, dans la sauvegarde du monde
-pub const SEEN_FILE: &str = "cinematiques.json";
+pub(crate) const SEEN_FILE: &str = "cinematiques.json";
 
 impl Cinematics {
-    pub fn load() -> Self {
+    pub(crate) fn load() -> Self {
         Self { player: CinematicPlayer::new(CinematicCatalog::load_default()), anchor: None, world: None }
     }
 
-    pub fn is_playing(&self) -> bool {
+    pub(crate) fn is_playing(&self) -> bool {
         self.player.is_playing()
     }
 
     /// Les découpes du plan en cours, et celles du plan suivant (à préparer d'avance)
-    pub fn card_sets(&self) -> (Option<CardSet>, Option<CardSet>) {
+    pub(crate) fn card_sets(&self) -> (Option<CardSet>, Option<CardSet>) {
         let Some(playing) = self.player.playing() else { return (None, None) };
         let cinematic = &playing.cinematic;
         let set = |t: f32| {
@@ -101,7 +101,7 @@ impl Cinematics {
 
     /// Change de monde (sauvegarde `dir`) : la lecture s'arrête et les cinématiques déjà vues sont
     /// celles de ce monde
-    pub fn set_world(&mut self, dir: std::path::PathBuf) {
+    pub(crate) fn set_world(&mut self, dir: std::path::PathBuf) {
         if self.world.as_ref() == Some(&dir) {
             return;
         }
@@ -112,19 +112,19 @@ impl Cinematics {
     }
 
     /// Un événement du jeu (« Pierre obtenue »…) : les cinématiques qu'il déclenche se jouent
-    pub fn notify(&mut self, event: &GameEvent) -> usize {
+    pub(crate) fn notify(&mut self, event: &GameEvent) -> usize {
         self.player.notify(event)
     }
 
     /// Le joueur demande à passer
-    pub fn request_skip(&mut self) -> SkipRequest {
+    pub(crate) fn request_skip(&mut self) -> SkipRequest {
         self.player.request_skip()
     }
 
     /// Avance la lecture et place la caméra. Renvoie les événements que la cinématique renvoie au
     /// jeu (changer d'époque, fin…), déjà renvoyés au lecteur lui-même pour qu'un événement puisse
     /// en déclencher une autre.
-    pub fn update(&mut self, dt: f32, camera: &mut OrbitCamera, generator: &herocraft_world::PlanetWorldGenerator) -> Vec<GameEvent> {
+    pub(crate) fn update(&mut self, dt: f32, camera: &mut OrbitCamera, generator: &herocraft_world::PlanetWorldGenerator) -> Vec<GameEvent> {
         self.player.update(dt);
         let mut events = self.player.take_events();
         // Une cinématique renvoie un événement qui en déclenche une autre : elle se joue à la suite
@@ -194,7 +194,7 @@ impl Cinematics {
 
     /// Les cartes de papier de la cinématique en cours, et la lumière qui les éclaire (aucune
     /// carte hors des cinématiques)
-    pub fn cards(&self, camera: &OrbitCamera, layers: &crate::paper_cards::CardLayers) -> (CardUniform, Vec<CardInstance>) {
+    pub(crate) fn cards(&self, camera: &OrbitCamera, layers: &crate::paper_cards::CardLayers) -> (CardUniform, Vec<CardInstance>) {
         let mut out = Vec::new();
         let (Some(playing), Some(anchor), Some(view)) = (self.player.playing(), self.anchor, camera.cinematic) else {
             return (CardUniform::default(), out);
@@ -270,7 +270,7 @@ impl Cinematics {
     }
 
     /// Ce que l'interface doit peindre par-dessus le jeu, `skip_key` étant le nom de la touche
-    pub fn overlay(&self) -> Option<Overlay> {
+    pub(crate) fn overlay(&self) -> Option<Overlay> {
         let playing = self.player.playing()?;
         let frame = self.player.frame()?;
         Some(Overlay {
@@ -289,7 +289,7 @@ impl Cinematics {
 
 /// Un texte à peindre
 #[derive(Debug, Clone)]
-pub struct OverlayCaption {
+pub(crate) struct OverlayCaption {
     pub text: String,
     pub speaker: Option<String>,
     pub style: CaptionStyle,
@@ -298,7 +298,7 @@ pub struct OverlayCaption {
 
 /// Ce que peint l'interface pendant une cinématique
 #[derive(Debug, Clone)]
-pub struct Overlay {
+pub(crate) struct Overlay {
     pub letterbox: f32,
     pub fade: ([u8; 3], f32),
     pub captions: Vec<OverlayCaption>,
@@ -319,7 +319,7 @@ fn faded(color: egui::Color32, alpha: f32) -> egui::Color32 {
 }
 
 /// Peint la cinématique par-dessus le jeu : bandeaux, voile, textes, invitation à passer
-pub fn draw(ctx: &egui::Context, overlay: &Overlay) {
+pub(crate) fn draw(ctx: &egui::Context, overlay: &Overlay) {
     let screen = ctx.content_rect();
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("cinematic")));
     let band = screen.height() * LETTERBOX_SHARE * overlay.letterbox;

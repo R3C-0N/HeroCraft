@@ -29,25 +29,25 @@ use crate::creatures::CreatureFrame;
 use crate::planet_mesh::PlanetVertex;
 
 /// Indice de texture réservé à la planche du héros dans les plages du maillage des créatures
-pub const HERO_TEXTURE: usize = usize::MAX;
+pub(crate) const HERO_TEXTURE: usize = usize::MAX;
 /// Premier indice de texture des planches des habitants (`CreatureRenderer::villager_texture`)
-pub const VILLAGER_TEXTURE_BASE: usize = usize::MAX / 2;
+pub(crate) const VILLAGER_TEXTURE_BASE: usize = usize::MAX / 2;
 
 /// Un quadrilatère de la figure : coins vus de dehors (bas gauche, bas droit, haut droit, haut
 /// gauche) et le rectangle de la planche qu'il montre, en texels
 #[derive(Clone, Copy, Debug)]
-pub struct Quad {
+pub(crate) struct Quad {
     pub corners: [Vec3; 4],
     pub uv: [f32; 4],
 }
 
 impl Quad {
     /// Normale sortante (non normée)
-    pub fn normal(&self) -> Vec3 {
+    pub(crate) fn normal(&self) -> Vec3 {
         (self.corners[1] - self.corners[0]).cross(self.corners[3] - self.corners[0])
     }
 
-    pub fn centre(&self) -> Vec3 {
+    pub(crate) fn centre(&self) -> Vec3 {
         (self.corners[0] + self.corners[1] + self.corners[2] + self.corners[3]) * 0.25
     }
 }
@@ -55,7 +55,7 @@ impl Quad {
 /// Les os du héros. Chaque pièce de la figure en suit un ; un os tourne autour de son pivot et
 /// emporte ses enfants (l'avant-bras suit le bras, la main suit l'avant-bras…).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Bone {
+pub(crate) enum Bone {
     /// Tout le héros, pivot aux pieds
     Body,
     /// Buste, tête et bras, pivot aux hanches (celui du dos voûté)
@@ -80,9 +80,9 @@ pub enum Bone {
 }
 
 impl Bone {
-    pub const COUNT: usize = 13;
+    pub(crate) const COUNT: usize = 13;
     /// Tous les os, chaque parent avant ses enfants
-    pub const ALL: [Bone; Bone::COUNT] = [
+    pub(crate) const ALL: [Bone; Bone::COUNT] = [
         Bone::Body,
         Bone::Torso,
         Bone::Head,
@@ -98,13 +98,13 @@ impl Bone {
         Bone::LeftShin,
     ];
 
-    pub fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self as usize
     }
 
     /// Nom de l'os dans les fichiers de gestes
     #[allow(dead_code)] // lu par les gestes des compétences
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Bone::Body => "body",
             Bone::Torso => "torso",
@@ -123,12 +123,12 @@ impl Bone {
     }
 
     #[allow(dead_code)] // lu par les gestes des compétences
-    pub fn from_name(name: &str) -> Option<Bone> {
+    pub(crate) fn from_name(name: &str) -> Option<Bone> {
         Bone::ALL.into_iter().find(|b| b.name() == name)
     }
 
     /// L'os qui porte celui-ci (aucun pour `Body`)
-    pub fn parent(self) -> Option<Bone> {
+    pub(crate) fn parent(self) -> Option<Bone> {
         Some(match self {
             Bone::Body => return None,
             Bone::Torso | Bone::RightLeg | Bone::LeftLeg => Bone::Body,
@@ -162,7 +162,7 @@ impl Bone {
     ///
     /// Ordre : z, puis x, puis y (le cap en dernier).
     #[allow(dead_code)] // lu par les gestes des compétences
-    pub fn rotation_from_degrees(self, [x, y, z]: [f32; 3]) -> Quat {
+    pub(crate) fn rotation_from_degrees(self, [x, y, z]: [f32; 3]) -> Quat {
         let (x, y, z) = (x.to_radians(), y.to_radians(), z.to_radians());
         // Un membre pend vers −y : l'envoyer vers +z demande une rotation x négative
         let forward = match self {
@@ -181,7 +181,7 @@ impl Bone {
 /// La pose d'un os, par rapport à son parent : une rotation autour de son pivot puis un
 /// déplacement, en unités du patron (`Figure::units_per_block` pour passer des blocs)
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BonePose {
+pub(crate) struct BonePose {
     pub rotation: Quat,
     pub translation: Vec3,
 }
@@ -195,7 +195,7 @@ impl Default for BonePose {
 /// Où se trouve un os posé : `p ↦ rotation · p + translation`, des unités du patron au repos vers
 /// la figure posée
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BoneFrame {
+pub(crate) struct BoneFrame {
     pub rotation: Quat,
     pub translation: Vec3,
 }
@@ -203,7 +203,7 @@ pub struct BoneFrame {
 impl BoneFrame {
     const IDENTITY: BoneFrame = BoneFrame { rotation: Quat::IDENTITY, translation: Vec3::ZERO };
 
-    pub fn apply(&self, p: Vec3) -> Vec3 {
+    pub(crate) fn apply(&self, p: Vec3) -> Vec3 {
         self.rotation * p + self.translation
     }
 
@@ -215,7 +215,7 @@ impl BoneFrame {
 /// Une articulation le long d'un membre : l'os qui part de là, la hauteur de son pivot au repos,
 /// et la demi-longueur de la courbe du pli
 #[derive(Clone, Copy, Debug)]
-pub struct Joint {
+pub(crate) struct Joint {
     pub bone: Bone,
     pub height: f32,
     pub bend: f32,
@@ -235,7 +235,7 @@ impl Joint {
 /// articulations où le pavé se plie (de haut en bas). Le membre reste un seul pavé, tordu en
 /// courbe au pli : la planche ne se découpe pas et aucun creux ne s'ouvre.
 #[derive(Clone, Debug)]
-pub struct Piece {
+pub(crate) struct Piece {
     pub quads: Vec<Quad>,
     pub bone: Bone,
     pub joints: Vec<Joint>,
@@ -243,7 +243,7 @@ pub struct Piece {
 
 /// Le héros en unités du patron, pieds à zéro, face vers +z, sa gauche vers +x
 #[derive(Clone, Debug)]
-pub struct Figure {
+pub(crate) struct Figure {
     pub pieces: Vec<Piece>,
     /// Pivot de chaque os au repos, dans l'ordre de `Bone::ALL`
     pivots: [Vec3; Bone::COUNT],
@@ -264,24 +264,24 @@ impl Figure {
     /// Les faces dans leur pose : membres balancés de `swing` radians, dos voûté, élargies de
     /// `width` en travers et en profondeur
     #[cfg(test)]
-    pub fn posed(&self, swing: f32, width: f32) -> impl Iterator<Item = Quad> + '_ {
+    pub(crate) fn posed(&self, swing: f32, width: f32) -> impl Iterator<Item = Quad> + '_ {
         self.posed_with(&FigurePose { swing, ..FigurePose::default() }, width)
     }
 
     /// Pivot de l'os au repos
-    pub fn pivot(&self, bone: Bone) -> Vec3 {
+    pub(crate) fn pivot(&self, bone: Bone) -> Vec3 {
         self.pivots[bone.index()]
     }
 
     /// Unités du patron par bloc pour une apparence (pour les déplacements des gestes, en blocs)
     #[allow(dead_code)] // lu par les gestes des compétences
-    pub fn units_per_block(&self, cfg: &Appearance) -> f32 {
+    pub(crate) fn units_per_block(&self, cfg: &Appearance) -> f32 {
         self.body_height / cfg.taille as f32
     }
 
     /// Où est chaque os dans la pose `pose` (avant élargissement et lévitation)
     #[allow(dead_code)] // lu par les gestes des compétences
-    pub fn bone_frames(&self, pose: &FigurePose) -> [BoneFrame; Bone::COUNT] {
+    pub(crate) fn bone_frames(&self, pose: &FigurePose) -> [BoneFrame; Bone::COUNT] {
         self.bone_frames_and_locals(pose).0
     }
 
@@ -316,12 +316,12 @@ impl Figure {
     }
 
     /// Les faces dans une pose complète : comme `posed`, chaque os tourné et déplacé en plus
-    pub fn posed_with(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = Quad> + use<'_> {
+    pub(crate) fn posed_with(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = Quad> + use<'_> {
         self.posed_bones(pose, width).map(|(_, quad)| quad)
     }
 
     /// Comme `posed_with`, avec l'os de la pièce qui porte chaque quadrilatère
-    pub fn posed_bones(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = (Bone, Quad)> + use<'_> {
+    pub(crate) fn posed_bones(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = (Bone, Quad)> + use<'_> {
         let scale = vec3(width, 1.0, width);
         let lift = vec3(0.0, self.hover, 0.0);
         let (frames, locals) = self.bone_frames_and_locals(pose);
@@ -352,7 +352,7 @@ impl Figure {
 
     /// Nombre de faces
     #[cfg(test)]
-    pub fn quad_count(&self) -> usize {
+    pub(crate) fn quad_count(&self) -> usize {
         self.pieces.iter().map(|p| p.quads.len()).sum()
     }
 }
@@ -500,7 +500,7 @@ const RELIEF_CORPS: f32 = 0.5;
 const HOVER: f32 = 2.0;
 
 /// Le corps du héros pour l'apparence `cfg`, en relief sur sa planche peinte `sheet`
-pub fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
+pub(crate) fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
     let a = atlas();
     let m = a.mods_de(cfg);
     let ratio = |v: Option<f64>| v.filter(|v| *v > 0.0).unwrap_or(1.0) as f32;
@@ -605,12 +605,12 @@ pub fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
 
 /// Une figure et sa planche, gardées tant que l'apparence ne change pas ce qui s'y voit
 #[derive(Default)]
-pub struct FigureCache {
+pub(crate) struct FigureCache {
     entry: Option<(String, Figure)>,
 }
 
 impl FigureCache {
-    pub fn get(&mut self, cfg: &Appearance) -> &Figure {
+    pub(crate) fn get(&mut self, cfg: &Appearance) -> &Figure {
         let key = cfg.sheet_key();
         if self.entry.as_ref().is_none_or(|(k, _)| *k != key) {
             let sheet = paint(cfg);
@@ -634,7 +634,7 @@ const STRIDE_PER_SPEED: f32 = 0.3;
 
 /// La marche du héros : le balancement de ses membres suit son déplacement
 #[derive(Default)]
-pub struct HeroGait {
+pub(crate) struct HeroGait {
     last_feet: Option<Vec3>,
     phase: f32,
     amplitude: f32,
@@ -644,7 +644,7 @@ pub struct HeroGait {
 
 impl HeroGait {
     /// Avance la marche de `dt` secondes vers la position `feet` ; `block` : taille d'un bloc
-    pub fn update(&mut self, feet: Vec3, dt: f32, block: f32) {
+    pub(crate) fn update(&mut self, feet: Vec3, dt: f32, block: f32) {
         let last = self.last_feet.replace(feet).unwrap_or(feet);
         if dt <= 0.0 {
             return;
@@ -664,14 +664,14 @@ impl HeroGait {
     }
 
     /// Angle de balancement du moment
-    pub fn swing(&self) -> f32 {
+    pub(crate) fn swing(&self) -> f32 {
         self.amplitude * self.phase.sin()
     }
 }
 
 /// Ajoute le héros au maillage des créatures, debout sur `feet` et tourné vers `yaw` (0 = nord),
 /// dans la pose `pose` (balancement de la marche, geste d'une compétence) ; `block` : taille d'un bloc
-pub fn push_hero_posed(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) {
+pub(crate) fn push_hero_posed(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) {
     push_figure(frame, cfg, figure, feet, yaw, pose, HERO_TEXTURE, block);
 }
 
@@ -681,7 +681,7 @@ const ARM_BONES: [Bone; 6] = [Bone::RightArm, Bone::LeftArm, Bone::RightForearm,
 /// Vue à la première personne, pendant le geste d'une compétence : les bras du héros posé (et
 /// l'arme de sa main droite, s'il en tient une), accrochés à l'œil `eye` qui regarde vers `look`.
 /// Renvoie les points des mains, où se jouent les effets.
-pub fn push_first_person_arms(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, eye: Vec3, look: Vec3, pose: &FigurePose, weapon: Option<[f32; 4]>, block: f32) -> (Vec3, Vec3) {
+pub(crate) fn push_first_person_arms(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, eye: Vec3, look: Vec3, pose: &FigurePose, weapon: Option<[f32; 4]>, block: f32) -> (Vec3, Vec3) {
     let up_hint = eye.normalize_or_zero();
     let forward = look.normalize_or(up_hint.any_orthonormal_vector());
     let left = up_hint.cross(forward).normalize_or(forward.any_orthonormal_vector());
@@ -758,7 +758,7 @@ fn push_box(frame: &mut CreatureFrame, base: Vec3, along: Vec3, side: Vec3, leng
 
 /// Points du héros posé où se jouent les effets des compétences, dans le monde
 #[derive(Debug, Clone, Copy)]
-pub struct HeroAnchors {
+pub(crate) struct HeroAnchors {
     pub feet: Vec3,
     pub body: Vec3,
     pub head: Vec3,
@@ -768,7 +768,7 @@ pub struct HeroAnchors {
 
 impl HeroAnchors {
     /// Points approchés d'un héros qu'on ne dessine pas (vue à la première personne, autre joueur)
-    pub fn standing(feet: Vec3, yaw: f32, block: f32) -> Self {
+    pub(crate) fn standing(feet: Vec3, yaw: f32, block: f32) -> Self {
         let up = feet.normalize_or_zero();
         let (east, north) = tangent_frame(up);
         let forward = north * yaw.cos() + east * yaw.sin();
@@ -778,7 +778,7 @@ impl HeroAnchors {
     }
 
     /// Points du héros `figure` posé en `pose`, debout sur `feet` et tourné vers `yaw`
-    pub fn posed(cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) -> Self {
+    pub(crate) fn posed(cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) -> Self {
         let up = feet.normalize_or_zero();
         let (east, north) = tangent_frame(up);
         let forward = north * yaw.cos() + east * yaw.sin();
@@ -793,7 +793,7 @@ impl HeroAnchors {
 
 /// Posture d'une figure : balancement de la marche, pose de chaque os, couchée, teinte
 #[derive(Debug, Clone, Copy)]
-pub struct FigurePose {
+pub(crate) struct FigurePose {
     /// Balancement des bras et des jambes
     pub swing: f32,
     /// Rotation et déplacement de chaque os par rapport à son parent, dans l'ordre de `Bone::ALL`,
@@ -813,34 +813,34 @@ impl Default for FigurePose {
 
 impl FigurePose {
     #[allow(dead_code)] // lu par les gestes des compétences
-    pub fn bone(&self, bone: Bone) -> &BonePose {
+    pub(crate) fn bone(&self, bone: Bone) -> &BonePose {
         &self.bones[bone.index()]
     }
 
-    pub fn bone_mut(&mut self, bone: Bone) -> &mut BonePose {
+    pub(crate) fn bone_mut(&mut self, bone: Bone) -> &mut BonePose {
         &mut self.bones[bone.index()]
     }
 
     /// Raccourci des habitants : lève le bras droit vers l'avant de `angle` radians
-    pub fn raise_right_arm(&mut self, angle: f32) {
+    pub(crate) fn raise_right_arm(&mut self, angle: f32) {
         self.bone_mut(Bone::RightArm).rotation = Quat::from_rotation_x(-angle);
     }
 
     /// Raccourci des habitants : lève le bras gauche vers l'avant de `angle` radians
-    pub fn raise_left_arm(&mut self, angle: f32) {
+    pub(crate) fn raise_left_arm(&mut self, angle: f32) {
         self.bone_mut(Bone::LeftArm).rotation = Quat::from_rotation_x(-angle);
     }
 
     /// De combien le bras `bone` est levé vers l'avant, en radians
     #[allow(dead_code)] // lu par les gestes des compétences
-    pub fn arm_raise(&self, bone: Bone) -> f32 {
+    pub(crate) fn arm_raise(&self, bone: Bone) -> f32 {
         let down = self.bone(bone).rotation * Vec3::NEG_Y;
         down.z.atan2(-down.y)
     }
 }
 
 /// Ajoute une figure humanoïde au maillage des créatures avec la planche d'indice `texture`
-pub fn push_figure(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
+pub(crate) fn push_figure(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
     let up = feet.normalize_or_zero();
     let (east, north) = tangent_frame(up);
     let forward = north * yaw.cos() + east * yaw.sin();

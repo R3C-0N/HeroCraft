@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use glam::{DVec3, Mat4, Vec3};
 use herocraft_common::BlockId;
-pub use herocraft_common::tangent_frame;
+pub(crate) use herocraft_common::tangent_frame;
 use herocraft_world::generator::PlanetWorldGenerator;
 use herocraft_world::TerrainEdits;
 
 use crate::collision::VoxelCollider;
 
 /// Demi-largeur du joueur, en blocs (0.6 bloc de large)
-pub const PLAYER_HALF_WIDTH: f32 = 0.3;
+pub(crate) const PLAYER_HALF_WIDTH: f32 = 0.3;
 /// Hauteur du corps testée contre les murs et plafonds, en blocs (le joueur mesure 1.8 bloc)
-pub const PLAYER_HEIGHT: f32 = 1.75;
+pub(crate) const PLAYER_HEIGHT: f32 = 1.75;
 /// Distance de la vue TPS la plus proche, en blocs
 const TPS_CLOSE_BLOCKS: f32 = 4.5;
 /// Tolérance de contact avec le sol, en blocs : aucune marche n'est montée sans sauter
@@ -61,7 +61,7 @@ enum Carried {
 
 /// Mode de vue actif selon le continuum de distance de zoom
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CameraViewMode {
+pub(crate) enum CameraViewMode {
     /// Vue à la Première Personne (les yeux à hauteur des blocs, 1.7 blocs au-dessus du sol)
     FirstPerson,
     /// Vue à la Troisième Personne (caméra reculée derrière le joueur)
@@ -74,7 +74,7 @@ pub enum CameraViewMode {
 /// Passe sans couture de la Première Personne (FPS au sol) à la Troisième Personne (TPS)
 /// puis à l'Orbite Planétaire globale (Satellite) par simple molette de souris.
 /// Équipée d'un bras de collision dynamique (Spring-Arm) empêchant toute pénétration sous le relief.
-pub struct OrbitCamera {
+pub(crate) struct OrbitCamera {
     /// Position 3D du joueur sur la sphère
     pub player_pos: Vec3,
     /// Taille du héros, en mètres (en blocs) : ses yeux et le haut de sa tête en dépendent
@@ -173,7 +173,7 @@ pub struct OrbitCamera {
 
 /// Caméra imposée par une cinématique, dans le repère du monde
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CinematicView {
+pub(crate) struct CinematicView {
     pub eye: Vec3,
     pub target: Vec3,
     pub up: Vec3,
@@ -182,7 +182,7 @@ pub struct CinematicView {
 }
 
 /// Rayon de base de la planète par défaut
-pub const DEFAULT_RADIUS: f32 = (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32;
+pub(crate) const DEFAULT_RADIUS: f32 = (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32;
 
 impl Default for OrbitCamera {
     fn default() -> Self {
@@ -251,7 +251,7 @@ impl Default for OrbitCamera {
 }
 
 impl OrbitCamera {
-    pub fn new(distance: f32, base_radius: f32, generator: &PlanetWorldGenerator) -> Self {
+    pub(crate) fn new(distance: f32, base_radius: f32, generator: &PlanetWorldGenerator) -> Self {
         // Recul maximal de l'orbite et portée de la vue : à l'échelle de la planète entière
         let scale = base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let mut cam = Self {
@@ -271,12 +271,12 @@ impl OrbitCamera {
     }
 
     /// Active les collisions par blocs avec ce terrain (à refaire à chaque nouvelle planète)
-    pub fn set_terrain(&mut self, edits: Arc<TerrainEdits>) {
+    pub(crate) fn set_terrain(&mut self, edits: Arc<TerrainEdits>) {
         self.collider = Some(VoxelCollider::new(edits, self.base_radius));
     }
 
     /// Place le joueur directement sur la terre ferme au-dessus de la mer
-    pub fn spawn_on_ground(&mut self, generator: &PlanetWorldGenerator) {
+    pub(crate) fn spawn_on_ground(&mut self, generator: &PlanetWorldGenerator) {
         herocraft_common::prof_scope!("camera::spawn_on_ground");
         let candidates = [
             Vec3::new(1.0, 0.2, 0.2).normalize(),
@@ -375,7 +375,7 @@ impl OrbitCamera {
     }
 
     /// Mode de caméra déduit du continuum de distance effective
-    pub fn view_mode(&self) -> CameraViewMode {
+    pub(crate) fn view_mode(&self) -> CameraViewMode {
         // Cinématique : le héros est vu de l'extérieur, comme en troisième personne
         if self.cinematic.is_some() {
             CameraViewMode::ThirdPerson
@@ -389,7 +389,7 @@ impl OrbitCamera {
     }
 
     /// Calcule le repère orthonormé local (Up, East, North) à la position actuelle du joueur
-    pub fn local_frame(&self) -> (Vec3, Vec3, Vec3) {
+    pub(crate) fn local_frame(&self) -> (Vec3, Vec3, Vec3) {
         let player_len = self.player_pos.length().max(1.0);
         let up = self.player_pos / player_len;
         let (east, north) = tangent_frame(up);
@@ -397,7 +397,7 @@ impl OrbitCamera {
     }
 
     /// Direction tangentielle avant, droite et direction 3D du regard (look_dir)
-    pub fn look_vectors(&self) -> (Vec3, Vec3, Vec3, Vec3) {
+    pub(crate) fn look_vectors(&self) -> (Vec3, Vec3, Vec3, Vec3) {
         let (up, east, north) = self.local_frame();
         let forward_tangent = (north * self.player_yaw.cos() + east * self.player_yaw.sin()).normalize();
         let right_tangent = forward_tangent.cross(up).normalize();
@@ -406,7 +406,7 @@ impl OrbitCamera {
     }
 
     /// Direction orbitale unitaire de la caméra par rapport au centre planétaire
-    pub fn orbit_direction(&self) -> Vec3 {
+    pub(crate) fn orbit_direction(&self) -> Vec3 {
         Vec3::new(
             self.orbit_pitch.cos() * self.orbit_yaw.sin(),
             self.orbit_pitch.sin(),
@@ -418,7 +418,7 @@ impl OrbitCamera {
     /// Calcule le rayon minimum de sécurité du sol sous une direction donnée. Avec les collisions par
     /// blocs, une direction unitaire donne le dessus de toute la colonne, un point de l'espace le sol
     /// sous ce point (ou le dessus des blocs qui le contiennent).
-    pub fn ground_radius_at(&self, dir: Vec3, generator: &PlanetWorldGenerator) -> f32 {
+    pub(crate) fn ground_radius_at(&self, dir: Vec3, generator: &PlanetWorldGenerator) -> f32 {
         herocraft_common::prof_scope!("camera::ground_radius_at");
         if let Some(collider) = &self.collider {
             return if dir.length() < self.base_radius * 0.5 {
@@ -438,7 +438,7 @@ impl OrbitCamera {
     }
 
     /// Oriente la caméra ou le regard selon le glisser de souris
-    pub fn orbit(&mut self, dx: f32, dy: f32) {
+    pub(crate) fn orbit(&mut self, dx: f32, dy: f32) {
         match self.view_mode() {
             CameraViewMode::FirstPerson | CameraViewMode::ThirdPerson => {
                 // Rotation de la tête / regard du joueur
@@ -461,14 +461,14 @@ impl OrbitCamera {
 
     /// Oriente le regard du joueur (souris capturée). `yaw` et `pitch` sont en radians ;
     /// un pitch positif lève le regard.
-    pub fn look(&mut self, yaw: f32, pitch: f32) {
+    pub(crate) fn look(&mut self, yaw: f32, pitch: f32) {
         self.player_yaw += yaw;
         self.player_pitch = (self.player_pitch + pitch).clamp(-1.48, 1.48); // ~85 degrés
         self.sync_orbit_to_ground();
     }
 
     /// Relâche toutes les entrées de déplacement maintenues (menu ouvert, perte du focus)
-    pub fn release_inputs(&mut self) {
+    pub(crate) fn release_inputs(&mut self) {
         self.move_forward = false;
         self.move_backward = false;
         self.move_left = false;
@@ -479,7 +479,7 @@ impl OrbitCamera {
     }
 
     /// Décolle ou cesse de voler
-    pub fn toggle_flight(&mut self) {
+    pub(crate) fn toggle_flight(&mut self) {
         self.is_flying = !self.is_flying;
         self.vertical_velocity = 0.0;
         self.jump_requested = false;
@@ -499,7 +499,7 @@ impl OrbitCamera {
     }
 
     /// Blessure de force `strength` (0 à 1) : la vue penche brièvement
-    pub fn hurt(&mut self, strength: f32) {
+    pub(crate) fn hurt(&mut self, strength: f32) {
         self.hurt_shake = HURT_SHAKE_SECS;
         self.hurt_strength = strength.clamp(0.0, 1.0);
     }
@@ -513,19 +513,19 @@ impl OrbitCamera {
     }
 
     /// Oublie la chute en cours (téléportation, apparition)
-    pub fn cancel_fall(&mut self) {
+    pub(crate) fn cancel_fall(&mut self) {
         self.fall_peak = None;
         self.landed_fall = None;
     }
 
     /// Hauteur en blocs de la chute qui vient de se terminer au sol, une seule fois
-    pub fn take_landing(&mut self) -> Option<f32> {
+    pub(crate) fn take_landing(&mut self) -> Option<f32> {
         self.landed_fall.take()
     }
 
     /// Le joueur est accroupi : Descendre maintenu, au sol. Il marche lentement, ne sprinte pas, et
     /// les bêtes craintives le remarquent de moins loin.
-    pub fn is_crouching(&self) -> bool {
+    pub(crate) fn is_crouching(&self) -> bool {
         self.descend_held && !self.is_flying && !self.is_dead && self.view_mode() != CameraViewMode::SatelliteOrbit
     }
 
@@ -541,7 +541,7 @@ impl OrbitCamera {
     }
 
     /// Le joueur sprinte à pied (ce qui consomme son endurance)
-    pub fn is_running(&self) -> bool {
+    pub(crate) fn is_running(&self) -> bool {
         self.is_sprinting
             && !self.is_crouching()
             && !self.sprint_exhausted
@@ -551,7 +551,7 @@ impl OrbitCamera {
     }
 
     /// Synchronise la position au sol du joueur avec la vue orbitale satellite
-    pub fn sync_ground_to_orbit(&mut self, generator: &PlanetWorldGenerator) {
+    pub(crate) fn sync_ground_to_orbit(&mut self, generator: &PlanetWorldGenerator) {
         let dir = self.orbit_direction();
         let ground_radius = self.ground_radius_at(dir, generator);
 
@@ -564,7 +564,7 @@ impl OrbitCamera {
     }
 
     /// Synchronise les angles orbitaux avec la position du joueur au sol
-    pub fn sync_orbit_to_ground(&mut self) {
+    pub(crate) fn sync_orbit_to_ground(&mut self) {
         let len = self.player_pos.length();
         if len > 0.001 {
             let up = self.player_pos / len;
@@ -575,7 +575,7 @@ impl OrbitCamera {
 
     /// Téléporte le joueur aux pieds `feet` (vue au sol) : en vol s'il n'est pas posé au sol, pour
     /// qu'il ne fasse pas de chute
-    pub fn teleport(&mut self, feet: Vec3, generator: &PlanetWorldGenerator) {
+    pub(crate) fn teleport(&mut self, feet: Vec3, generator: &PlanetWorldGenerator) {
         let ground = self.ground_radius_at(feet.normalize_or_zero(), generator);
         let block = self.block_height();
         self.player_pos = feet;
@@ -591,14 +591,14 @@ impl OrbitCamera {
     }
 
     /// Pieds posés au sol à cette latitude et longitude (radians), `height_blocks` blocs au-dessus
-    pub fn ground_point(&self, lat: f32, lon: f32, height_blocks: f32, generator: &PlanetWorldGenerator) -> Vec3 {
+    pub(crate) fn ground_point(&self, lat: f32, lon: f32, height_blocks: f32, generator: &PlanetWorldGenerator) -> Vec3 {
         let dir = Vec3::new(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin());
         dir * (self.ground_radius_at(dir, generator) + height_blocks * self.block_height())
     }
 
     /// Caméra posée à `distance` blocs du héros (0 : première personne), tournée vers `yaw`
     /// degrés et inclinée de `pitch` degrés (commande `/camera`)
-    pub fn set_view(&mut self, distance: f32, yaw: Option<f32>, pitch: Option<f32>) {
+    pub(crate) fn set_view(&mut self, distance: f32, yaw: Option<f32>, pitch: Option<f32>) {
         self.target_distance = distance * self.block_height();
         if let Some(yaw) = yaw {
             self.player_yaw = yaw.to_radians();
@@ -609,7 +609,7 @@ impl OrbitCamera {
     }
 
     /// Zoom continu via la molette : passe sans couture de Satellite à TPS puis à FPS
-    pub fn zoom(&mut self, delta_y: f32) {
+    pub(crate) fn zoom(&mut self, delta_y: f32) {
         // Au plus près, la caméra se tient à quelques blocs du héros pour qu'on le voie en entier
         let close = TPS_CLOSE_BLOCKS * self.eye_height_standing() / 1.7;
         if self.target_distance <= 0.05 && delta_y < 0.0 {
@@ -643,19 +643,19 @@ impl OrbitCamera {
     }
 
     /// Déclenche une transition fluide vers la vue satellite orbitale
-    pub fn transition_to_orbit(&mut self) {
+    pub(crate) fn transition_to_orbit(&mut self) {
         self.sync_orbit_to_ground();
         self.target_distance = self.base_radius * 6.6;
     }
 
     /// Déclenche une transition fluide vers la vue au sol à la première personne (FPS)
-    pub fn transition_to_ground(&mut self, generator: &PlanetWorldGenerator) {
+    pub(crate) fn transition_to_ground(&mut self, generator: &PlanetWorldGenerator) {
         self.sync_ground_to_orbit(generator);
         self.target_distance = 0.0;
     }
 
     /// Bascule de manière fluide entre la vue au sol et la vue satellite orbitale
-    pub fn toggle_view(&mut self, generator: &PlanetWorldGenerator) {
+    pub(crate) fn toggle_view(&mut self, generator: &PlanetWorldGenerator) {
         if self.target_distance <= self.base_radius {
             self.transition_to_orbit();
         } else {
@@ -664,7 +664,7 @@ impl OrbitCamera {
     }
 
     /// Calcule la position de la caméra sans aucune pénétration sous le relief (Spring-Arm anti-collision)
-    pub fn update_camera_bounds(&mut self, generator: &PlanetWorldGenerator) {
+    pub(crate) fn update_camera_bounds(&mut self, generator: &PlanetWorldGenerator) {
         herocraft_common::prof_scope!("camera::update_camera_bounds");
         let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
         let (up, _, _, look_dir) = self.look_vectors();
@@ -745,7 +745,7 @@ impl OrbitCamera {
     }
 
     /// Mise à jour physique du joueur et de la caméra (déplacement ZQSD, gravité sphérique, détection de relief)
-    pub fn update(&mut self, dt: f32, generator: &PlanetWorldGenerator) {
+    pub(crate) fn update(&mut self, dt: f32, generator: &PlanetWorldGenerator) {
         herocraft_common::prof_scope!("camera::update");
         // 0. Transition fluide et sans à-coups de la distance de zoom (sans téléportation)
         if self.distance > self.base_radius && self.target_distance <= self.base_radius {
@@ -1032,7 +1032,7 @@ impl OrbitCamera {
     /// Élan d'une compétence : ruée (`dash`) ou bond (`leap`) droit devant (en arrière s'ils sont
     /// négatifs), ou bond de côté (`side`, vers la gauche si le joueur y va, sinon vers la droite),
     /// en blocs, en `seconds` secondes
-    pub fn launch(&mut self, dash: f32, leap: f32, side: f32, seconds: f32) {
+    pub(crate) fn launch(&mut self, dash: f32, leap: f32, side: f32, seconds: f32) {
         let (_, forward, right, _) = self.look_vectors();
         let seconds = seconds.max(0.1);
         let (direction, distance) = if side != 0.0 {
@@ -1053,7 +1053,7 @@ impl OrbitCamera {
 
     /// Une compétence fait léviter le joueur : il monte de `height` blocs et flotte `duration`
     /// secondes, puis redescend sans se blesser
-    pub fn hover(&mut self, height: f32, duration: f32) {
+    pub(crate) fn hover(&mut self, height: f32, duration: f32) {
         if self.is_flying || self.is_dead {
             return;
         }
@@ -1066,7 +1066,7 @@ impl OrbitCamera {
 
     /// Une compétence tire le joueur vers `to` à `speed` blocs par seconde, jusqu'à `stop` blocs de
     /// lui ; avec `hoist`, il se hisse sur le rebord qui l'arrête (grappin)
-    pub fn pull(&mut self, to: Vec3, speed: f32, stop: f32, hoist: bool) {
+    pub(crate) fn pull(&mut self, to: Vec3, speed: f32, stop: f32, hoist: bool) {
         if self.is_flying || self.is_dead || !to.is_finite() {
             return;
         }
@@ -1150,7 +1150,7 @@ impl OrbitCamera {
     /// Une compétence téléporte le joueur aux pieds `feet`, le regard vers `look`. Si la place est
     /// prise, il se pose sur la case libre la plus proche, à `TELEPORT_SLACK` blocs au plus ; sinon
     /// il reste où il est. Renvoie vrai s'il a bougé.
-    pub fn skill_teleport(&mut self, feet: Vec3, look: Vec3, generator: &PlanetWorldGenerator) -> bool {
+    pub(crate) fn skill_teleport(&mut self, feet: Vec3, look: Vec3, generator: &PlanetWorldGenerator) -> bool {
         if self.is_dead || !feet.is_finite() || feet.length() < 1.0 {
             return false;
         }
@@ -1185,7 +1185,7 @@ impl OrbitCamera {
     }
 
     /// Tourne le regard vers la direction `look` (repère du monde)
-    pub fn look_toward(&mut self, look: Vec3) {
+    pub(crate) fn look_toward(&mut self, look: Vec3) {
         let (up, east, north) = self.local_frame();
         let Some(look) = look.try_normalize() else { return };
         let flat = look - up * look.dot(up);
@@ -1197,7 +1197,7 @@ impl OrbitCamera {
 
     /// Le coup d'une bête repousse le joueur le long du sol dans `direction`, à `speed` blocs par
     /// seconde, avec un petit saut
-    pub fn push(&mut self, direction: Vec3, speed: f32) {
+    pub(crate) fn push(&mut self, direction: Vec3, speed: f32) {
         let up = self.player_pos.normalize_or_zero();
         let direction = (direction - up * direction.dot(up)).normalize_or_zero();
         if direction == Vec3::ZERO || speed <= 0.0 || self.is_dead {
@@ -1211,7 +1211,7 @@ impl OrbitCamera {
     }
 
     /// Bloc qui porte le joueur (sa matière donne le son des pas), ou l'eau quand il y a les pieds
-    pub fn surface_block(&self, generator: &PlanetWorldGenerator) -> Option<BlockId> {
+    pub(crate) fn surface_block(&self, generator: &PlanetWorldGenerator) -> Option<BlockId> {
         let collider = self.collider.as_ref()?;
         let h = collider.block_height();
         let up = self.player_pos.normalize();
@@ -1223,25 +1223,25 @@ impl OrbitCamera {
     }
 
     /// Un bloc au-dessus de la tête bouche le ciel (grotte, abri)
-    pub fn sky_covered(&self, generator: &PlanetWorldGenerator) -> bool {
+    pub(crate) fn sky_covered(&self, generator: &PlanetWorldGenerator) -> bool {
         let Some(collider) = &self.collider else { return false };
         let head = self.player_pos.length() + PLAYER_HEIGHT * collider.block_height();
         collider.column_top_radius(generator, self.player_pos) > head
     }
 
     /// Position 3D de l'œil de la caméra dans l'espace monde (garantie strictement au-dessus du sol)
-    pub fn eye_position(&self) -> Vec3 {
+    pub(crate) fn eye_position(&self) -> Vec3 {
         self.cinematic.map_or(self.effective_eye, |c| c.eye)
     }
 
     /// Point autour duquel le relief se détaille : l'œil du joueur, même quand une cinématique
     /// tient la caméra (la scène de papier, loin au-dessus, ne doit pas faire perdre le sol)
-    pub fn lod_eye(&self) -> Vec3 {
+    pub(crate) fn lod_eye(&self) -> Vec3 {
         self.effective_eye
     }
 
     /// Matrice View-Projection avec FOV adaptatif selon le mode (FPS immersif -> Satellite téléobjectif)
-    pub fn build_view_projection_matrix(&self) -> Mat4 {
+    pub(crate) fn build_view_projection_matrix(&self) -> Mat4 {
         if let Some(c) = self.cinematic {
             let view = Mat4::look_at_rh(c.eye, c.target, c.up);
             return Mat4::perspective_rh(c.fov, self.aspect, 0.01, self.z_far) * view;
@@ -1279,7 +1279,7 @@ impl OrbitCamera {
     }
 
     /// Réinitialise la caméra en vue satellite avec transition fluide
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.target_distance = self.base_radius * 6.6;
         self.orbit_yaw = 0.5;
         self.orbit_pitch = 0.35;
@@ -1288,7 +1288,7 @@ impl OrbitCamera {
     /// Rayon de visée du centre de l'écran (réticule) en jeu : origine à l'œil, direction du regard,
     /// et distance de l'œil à la tête du joueur (non nulle en troisième personne). `None` en vue
     /// satellite, où rien n'est visé.
-    pub fn view_ray(&self) -> Option<(Vec3, Vec3, f32)> {
+    pub(crate) fn view_ray(&self) -> Option<(Vec3, Vec3, f32)> {
         if self.view_mode() == CameraViewMode::SatelliteOrbit {
             return None;
         }
@@ -1300,7 +1300,7 @@ impl OrbitCamera {
 }
 
 /// Le centre et les 4 coins de l'empreinte carrée du joueur autour du point `p`
-pub fn footprint(p: Vec3, block_height: f32) -> [Vec3; 5] {
+pub(crate) fn footprint(p: Vec3, block_height: f32) -> [Vec3; 5] {
     let (east, north) = tangent_frame(p.normalize());
     let (e, n) = (east * PLAYER_HALF_WIDTH * block_height, north * PLAYER_HALF_WIDTH * block_height);
     [p, p + e + n, p + e - n, p - e + n, p - e - n]

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::protocol::PROTOCOL_VERSION;
 
 /// Port UDP des annonces
-pub const LAN_DISCOVERY_PORT: u16 = 7778;
+pub(crate) const LAN_DISCOVERY_PORT: u16 = 7778;
 /// Une partie qui ne s'est plus annoncée depuis ce délai disparaît de la liste
 const LAN_EXPIRY: Duration = Duration::from_secs(4);
 const MAGIC: [u8; 8] = *b"HEROCRFT";

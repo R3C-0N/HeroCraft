@@ -15,7 +15,7 @@ use crate::inventory::Inventory;
 use crate::lod::PlanetLodManager;
 
 /// Portée de la visée, en blocs depuis la tête du joueur
-pub const REACH_BLOCKS: f64 = 6.0;
+pub(crate) const REACH_BLOCKS: f64 = 6.0;
 /// Délai entre deux poses tant que le bouton reste enfoncé
 const REPEAT_DELAY: f32 = 0.25;
 /// Pause entre un bloc cassé et le début du suivant, bouton toujours enfoncé
@@ -26,7 +26,7 @@ const HIT_INTERVAL: f32 = 0.25;
 const MAX_CACHED_COLUMNS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlockAction {
+pub(crate) enum BlockAction {
     Break,
     Place,
 }
@@ -51,7 +51,7 @@ struct AimKey {
 }
 
 #[derive(Default)]
-pub struct BlockInteraction {
+pub(crate) struct BlockInteraction {
     target: Option<RayHit>,
     /// Contenu du bloc visé
     target_block: BlockId,
@@ -69,18 +69,18 @@ pub struct BlockInteraction {
 }
 
 impl BlockInteraction {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Bloc visé à la dernière mise à jour
-    pub fn target(&self) -> Option<&RayHit> {
+    pub(crate) fn target(&self) -> Option<&RayHit> {
         self.target.as_ref()
     }
 
     /// Bouton de souris (souris capturée) : renvoie l'action à appliquer tout de suite (la pose ;
     /// la casse, elle, avance à chaque `tick` tant que le bouton reste enfoncé)
-    pub fn on_mouse_button(&mut self, button: MouseButton, pressed: bool) -> Option<BlockAction> {
+    pub(crate) fn on_mouse_button(&mut self, button: MouseButton, pressed: bool) -> Option<BlockAction> {
         let action = match button {
             MouseButton::Left => BlockAction::Break,
             MouseButton::Right => BlockAction::Place,
@@ -110,7 +110,7 @@ impl BlockInteraction {
     }
 
     /// Plus de visée ni de bouton tenu (souris libérée : menu, vue satellite, perte du focus)
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.target = None;
         self.held = None;
         self.mining = None;
@@ -120,7 +120,7 @@ impl BlockInteraction {
 
     /// Avance l'action dont le bouton reste enfoncé : renvoie `Break` quand le bloc visé finit de
     /// casser, `Place` à chaque répétition de la pose
-    pub fn tick(&mut self, dt: f32) -> Option<BlockAction> {
+    pub(crate) fn tick(&mut self, dt: f32) -> Option<BlockAction> {
         let action = self.held?;
         self.repeat_in -= dt;
         if self.repeat_in > 0.0 {
@@ -161,39 +161,39 @@ impl BlockInteraction {
     }
 
     /// Établi visé, et son niveau
-    pub fn aimed_station(&self) -> Option<herocraft_common::StationAt> {
+    pub(crate) fn aimed_station(&self) -> Option<herocraft_common::StationAt> {
         self.target.and_then(|_| herocraft_common::crafting().station_of(self.target_block))
     }
 
     /// Le clic gauche est tenu enfoncé (casse en cours, ou coup porté à une bête)
-    pub fn is_breaking_held(&self) -> bool {
+    pub(crate) fn is_breaking_held(&self) -> bool {
         self.held == Some(BlockAction::Break)
     }
 
     /// Le clic gauche a été enfoncé depuis le dernier appel (un nouveau clic, pas un bouton tenu)
-    pub fn take_fresh_press(&mut self) -> bool {
+    pub(crate) fn take_fresh_press(&mut self) -> bool {
         std::mem::take(&mut self.fresh_press)
     }
 
     /// Oublie l'avancement de la casse (le clic gauche frappe autre chose que le bloc)
-    pub fn pause_mining(&mut self) {
+    pub(crate) fn pause_mining(&mut self) {
         self.mining = None;
     }
 
     /// Coup porté depuis le dernier appel au bloc en train de casser : son contenu, pour le bruit
-    pub fn take_hit(&mut self) -> Option<BlockId> {
+    pub(crate) fn take_hit(&mut self) -> Option<BlockId> {
         self.hit.take()
     }
 
     /// Coins du bloc en train de casser et son avancement (0 à 1), pour ses fissures
-    pub fn cracks(&self, camera: &OrbitCamera) -> Option<([Vec3; 8], f32)> {
+    pub(crate) fn cracks(&self, camera: &OrbitCamera) -> Option<([Vec3; 8], f32)> {
         let mining = self.mining.filter(|m| self.target.is_some_and(|t| t.block == m.pos))?;
         let geometry = BlockGeometry::new(camera.base_radius as f64);
         Some((geometry.block_corners(mining.pos).map(|c| c.as_vec3()), mining.progress))
     }
 
     /// Vise le premier bloc solide sous le réticule, à portée de la tête du joueur
-    pub fn update_target(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits) {
+    pub(crate) fn update_target(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits) {
         herocraft_common::prof_scope!("blocs::visee");
         let Some((eye, dir, arm)) = camera.view_ray() else {
             self.target = None;
@@ -219,7 +219,7 @@ impl BlockInteraction {
 
     /// Distance libre sous le réticule, jusqu'au premier bloc solide et au plus `blocks` blocs
     /// au-delà du bras : ce que le joueur voit (pour lire le nom d'un habitant visé de loin)
-    pub fn sight(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits, blocks: f64) -> Option<f32> {
+    pub(crate) fn sight(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits, blocks: f64) -> Option<f32> {
         let (eye, dir, arm) = camera.view_ray()?;
         let geometry = BlockGeometry::new(camera.base_radius as f64);
         let reach = arm as f64 + blocks * geometry.block_height;
@@ -231,7 +231,7 @@ impl BlockInteraction {
 
     /// Distance au premier bloc solide sous le réticule, s'il est à moins de `blocks` blocs au-delà
     /// du bras (le point d'accroche d'un grappin)
-    pub fn hit_within(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits, blocks: f64) -> Option<f32> {
+    pub(crate) fn hit_within(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits, blocks: f64) -> Option<f32> {
         let (eye, dir, arm) = camera.view_ray()?;
         let geometry = BlockGeometry::new(camera.base_radius as f64);
         let reach = arm as f64 + blocks * geometry.block_height;
@@ -247,7 +247,7 @@ impl BlockInteraction {
     /// à faire tomber au sol) : vide si le terrain n'a pas changé. Casser une terre labourée fait
     /// tomber la plante qu'elle portait. Les maillages touchés sont déjà refaits : il reste à les
     /// envoyer au GPU.
-    pub fn apply(
+    pub(crate) fn apply(
         &mut self,
         action: BlockAction,
         camera: &OrbitCamera,
@@ -333,18 +333,18 @@ impl BlockInteraction {
     }
 
     /// Centre d'un bloc dans le repère du monde (là où tombe le bloc cassé)
-    pub fn block_center(camera: &OrbitCamera, pos: BlockPos) -> Vec3 {
+    pub(crate) fn block_center(camera: &OrbitCamera, pos: BlockPos) -> Vec3 {
         let geometry = BlockGeometry::new(camera.base_radius as f64);
         (geometry.block_corners(pos).iter().sum::<glam::DVec3>() / 8.0).as_vec3()
     }
 
     /// Le terrain a changé ailleurs (un autre joueur) : la visée est refaite à la prochaine frame
-    pub fn invalidate(&mut self) {
+    pub(crate) fn invalidate(&mut self) {
         self.last_aim = None;
     }
 
     /// Coins du bloc visé, pour son contour : la boîte qui englobe ses pavés s'il a une forme
-    pub fn outline(&self, camera: &OrbitCamera) -> Option<[Vec3; 8]> {
+    pub(crate) fn outline(&self, camera: &OrbitCamera) -> Option<[Vec3; 8]> {
         let hit = self.target?;
         let geometry = BlockGeometry::new(camera.base_radius as f64);
         let pos = hit.block;

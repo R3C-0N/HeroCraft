@@ -29,13 +29,13 @@ fn skinning_buffers(device: &wgpu::Device, capacity: (usize, usize)) -> (wgpu::B
 
 /// D'où vient la texture d'un humanoïde : une apparence à peindre, ou une image toute faite
 #[derive(Clone, Copy)]
-pub enum SheetSource<'a> {
+pub(crate) enum SheetSource<'a> {
     Painted(&'a herocraft_common::hero::Appearance),
     /// Clé unique et image
     Fixed(&'a str, &'a Texture),
 }
 
-pub struct CreatureRenderer {
+pub(crate) struct CreatureRenderer {
     pipeline: wgpu::RenderPipeline,
     /// Gardé pour recréer le pipeline quand la cible de la passe 3D change
     pipeline_layout: wgpu::PipelineLayout,
@@ -134,7 +134,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
 
 impl CreatureRenderer {
     /// `scene_layout` et `shadow_layout` : groupes 0 et 1 du relief
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, scene_layout: &wgpu::BindGroupLayout, shadow_layout: &wgpu::BindGroupLayout, target: post::SceneTarget) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, scene_layout: &wgpu::BindGroupLayout, shadow_layout: &wgpu::BindGroupLayout, target: post::SceneTarget) -> Self {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Creature Texture Layout"),
             entries: &[
@@ -177,12 +177,12 @@ impl CreatureRenderer {
     }
 
     /// Modèles des espèces, pour appliquer leurs os sur le GPU (`Skinning::Gpu`)
-    pub fn set_models(&mut self, device: &wgpu::Device, models: &crate::creatures::CreatureModels) {
+    pub(crate) fn set_models(&mut self, device: &wgpu::Device, models: &crate::creatures::CreatureModels) {
         self.skinning = Some(GpuSkinning::new(device, models));
     }
 
     /// À encoder avant les ombres et la passe 3D : le GPU place les sommets des bêtes de l'image
-    pub fn encode_skinning(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub(crate) fn encode_skinning(&self, encoder: &mut wgpu::CommandEncoder) {
         if let Some(skin) = self.skinning.as_ref().filter(|_| self.num_indices > 0) {
             skin.encode(encoder);
         }
@@ -190,12 +190,12 @@ impl CreatureRenderer {
 
     /// Cible de la passe 3D changée (MSAA coupé ou rétabli, format HDR) : le pipeline est
     /// recréé, textures et maillages sont gardés
-    pub fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
+    pub(crate) fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
         self.pipeline = create_pipeline(device, &self.pipeline_layout, target);
     }
 
     /// Textures des espèces, dans l'ordre du registre
-    pub fn set_textures(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, textures: &[Option<Texture>]) {
+    pub(crate) fn set_textures(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, textures: &[Option<Texture>]) {
         self.textures = textures
             .iter()
             .map(|t| t.as_ref().map(|t| texture_bind_group(device, queue, &self.texture_layout, &self.sampler, t, "Creature Texture")))
@@ -203,7 +203,7 @@ impl CreatureRenderer {
     }
 
     /// Planche du héros (`hero_model::HERO_TEXTURE`), repeinte seulement quand son apparence change
-    pub fn set_hero_sheet(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, appearance: &herocraft_common::hero::Appearance) {
+    pub(crate) fn set_hero_sheet(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, appearance: &herocraft_common::hero::Appearance) {
         let key = appearance.sheet_key();
         if self.hero.as_ref().is_some_and(|(k, _)| *k == key) {
             return;
@@ -216,7 +216,7 @@ impl CreatureRenderer {
 
     /// Début d'une image : les planches d'habitants inutilisées depuis longtemps sont oubliées (les
     /// indices des autres changent, à demander de nouveau avec `villager_texture`)
-    pub fn begin_villagers(&mut self) {
+    pub(crate) fn begin_villagers(&mut self) {
         self.frame_number += 1;
         if self.villagers.len() > MAX_VILLAGER_SHEETS {
             let now = self.frame_number;
@@ -226,7 +226,7 @@ impl CreatureRenderer {
 
     /// Indice de texture de la planche d'un habitant (peinte la première fois qu'on la demande), ou
     /// d'une image fixe (planche d'une invocation, arme greffée)
-    pub fn villager_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, source: SheetSource) -> usize {
+    pub(crate) fn villager_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, source: SheetSource) -> usize {
         let key = match source {
             SheetSource::Painted(appearance) => appearance.sheet_key(),
             SheetSource::Fixed(key, _) => format!("fixe:{key}"),
@@ -253,7 +253,7 @@ impl CreatureRenderer {
     }
 
     /// Envoie le maillage de l'image
-    pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: &CreatureFrame) {
+    pub(crate) fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: &CreatureFrame) {
         self.num_indices = frame.indices.len() as u32;
         self.draws = frame.draws.clone();
         if let Some(skin) = self.skinning.as_mut() {
@@ -313,7 +313,7 @@ impl CreatureRenderer {
     }
 
     /// Maillage de l'image pour la passe d'ombre (cascade proche seulement), s'il y a des créatures
-    pub fn shadow_caster(&self) -> Option<crate::shadow::Caster<'_>> {
+    pub(crate) fn shadow_caster(&self) -> Option<crate::shadow::Caster<'_>> {
         let b = self.buffers.as_ref().filter(|_| self.num_indices > 0)?;
         Some(crate::shadow::Caster {
             center: self.center,
@@ -326,7 +326,7 @@ impl CreatureRenderer {
     }
 
     /// À appeler dans la passe 3D, après le relief
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, scene_bind_group: &wgpu::BindGroup, shadow_bind_group: &wgpu::BindGroup) {
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, scene_bind_group: &wgpu::BindGroup, shadow_bind_group: &wgpu::BindGroup) {
         let Some(b) = self.buffers.as_ref().filter(|_| self.num_indices > 0) else { return };
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, scene_bind_group, &[]);

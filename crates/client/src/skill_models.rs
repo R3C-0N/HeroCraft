@@ -68,7 +68,7 @@ fn appearance(species: &str) -> Appearance {
 }
 
 /// Une pièce greffée sur le héros : son maillage et sa texture
-pub struct Graft {
+pub(crate) struct Graft {
     pub id: String,
     pub model: SkinnedModel,
     pub texture: Texture,
@@ -86,7 +86,7 @@ impl Graft {
 }
 
 /// L'allure d'une invocation humanoïde : un corps de héros à sa planche, et son arme
-pub struct SummonLook {
+pub(crate) struct SummonLook {
     pub id: String,
     pub appearance: Appearance,
     pub sheet: Texture,
@@ -130,12 +130,12 @@ fn summon_looks() -> &'static HashMap<String, SummonLook> {
 }
 
 /// L'allure de l'invocation humanoïde `species` (identifiant de sa créature), s'il y en a une
-pub fn summon_look(species: &str) -> Option<&'static SummonLook> {
+pub(crate) fn summon_look(species: &str) -> Option<&'static SummonLook> {
     summon_looks().get(species)
 }
 
 /// La pièce greffée `id` (`assets/skills/models/<id>.gltf`), lue la première fois qu'on la demande
-pub fn graft(id: &str) -> Option<&'static Graft> {
+pub(crate) fn graft(id: &str) -> Option<&'static Graft> {
     static GRAFTS: std::sync::Mutex<Option<HashMap<String, Option<&'static Graft>>>> = std::sync::Mutex::new(None);
     let mut grafts = GRAFTS.lock().unwrap_or_else(|e| e.into_inner());
     *grafts.get_or_insert_with(HashMap::new).entry(id.to_string()).or_insert_with(|| match Graft::load(id) {
@@ -155,7 +155,7 @@ fn copy_tints() -> &'static HashMap<String, [f32; 3]> {
 
 /// La créature telle qu'elle se dessine : une copie (`CreatureState::copy`) prend l'espèce
 /// qu'elle imite et la teinte de son espèce à elle ; une copie de son invocateur reste humanoïde
-pub fn drawn_as(view: &CreatureView, registry: &CreatureRegistry) -> CreatureView {
+pub(crate) fn drawn_as(view: &CreatureView, registry: &CreatureRegistry) -> CreatureView {
     let Some(copy) = view.copy else { return *view };
     let own = view.species.and_then(|s| registry.get(s));
     let tint = own.and_then(|s| copy_tints().get(&s.id).copied());
@@ -165,7 +165,7 @@ pub fn drawn_as(view: &CreatureView, registry: &CreatureRegistry) -> CreatureVie
 
 /// Ajoute une pièce greffée, posée comme la figure (`push_figure`) : chaque sommet suit l'os du
 /// héros dont il porte le nom
-pub fn push_graft(frame: &mut CreatureFrame, model: &SkinnedModel, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
+pub(crate) fn push_graft(frame: &mut CreatureFrame, model: &SkinnedModel, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
     // Le même repère que `push_figure`
     let up = feet.normalize_or_zero();
     let (east, north) = tangent_frame(up);

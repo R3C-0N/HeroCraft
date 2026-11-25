@@ -105,7 +105,7 @@ const CULL_GROUP: u32 = 64;
 /// Morceau de la table du relief, tel que le lit `terrain_cull.wgsl`
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CullRecord {
+pub(crate) struct CullRecord {
     /// Centre (xyz) et rayon de la sphère englobante (w)
     pub sphere: [f32; 4],
     pub max_radius: f32,
@@ -133,9 +133,9 @@ pub struct CullPass {
 }
 
 impl CullPass {
-    pub const CAMERA: u32 = 0;
-    pub const CASCADE: u32 = 1;
-    pub const EVERYTHING: u32 = 2;
+    pub(crate) const CAMERA: u32 = 0;
+    pub(crate) const CASCADE: u32 = 1;
+    pub(crate) const EVERYTHING: u32 = 2;
 
     pub fn everything() -> Self {
         Self { kind: Self::EVERYTHING, ..Default::default() }
@@ -221,7 +221,7 @@ impl GpuCull {
 #[cfg(test)]
 impl TerrainPool {
     /// Relit les dessins de `draws` écrits par le tri sur le GPU (attend la fin du GPU)
-    pub fn read_culled(&self, device: &wgpu::Device, queue: &wgpu::Queue, draws: &PreparedDraws) -> Vec<DrawIndexedIndirectArgs> {
+    pub(crate) fn read_culled(&self, device: &wgpu::Device, queue: &wgpu::Queue, draws: &PreparedDraws) -> Vec<DrawIndexedIndirectArgs> {
         let (PreparedDraws::Gpu { offset, counts }, Some(cull)) = (draws, self.gpu_cull.as_ref()) else { return Vec::new() };
         let size = (counts[0] + counts[1]) as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
         let readback = device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });

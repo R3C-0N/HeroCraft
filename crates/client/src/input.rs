@@ -6,17 +6,17 @@ use serde::{Deserialize, Serialize};
 use winit::keyboard::{Key, KeyCode};
 
 /// Fichier des contrôles du joueur, relatif au dossier de lancement (comme `saves/`)
-pub const CONTROLS_FILE: &str = "config/controles.json";
+pub(crate) const CONTROLS_FILE: &str = "config/controles.json";
 
 /// Rotation de la vue par unité de déplacement brut de la souris, à sensibilité 1.0 (radians)
-pub const LOOK_RADIANS_PER_COUNT: f32 = 0.0022;
+pub(crate) const LOOK_RADIANS_PER_COUNT: f32 = 0.0022;
 
 /// Délai maximal entre deux appuis sur Saut pour basculer le vol
-pub const DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(300);
+pub(crate) const DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(300);
 
 /// Actions du joueur attribuables à une touche
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Action {
+pub(crate) enum Action {
     MoveForward,
     MoveBackward,
     MoveLeft,
@@ -41,7 +41,7 @@ pub enum Action {
 }
 
 /// Groupes d'actions, dans l'ordre d'affichage de la page Commandes
-pub const ACTION_GROUPS: [(&str, &[Action]); 8] = [
+pub(crate) const ACTION_GROUPS: [(&str, &[Action]); 8] = [
     (
         "DÉPLACEMENT",
         &[
@@ -64,7 +64,7 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 8] = [
 ];
 
 impl Action {
-    pub const ALL: [Action; 21] = [
+    pub(crate) const ALL: [Action; 21] = [
         Action::MoveForward,
         Action::MoveBackward,
         Action::MoveLeft,
@@ -88,7 +88,7 @@ impl Action {
         Action::Skill4,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Action::MoveForward => "Avancer",
             Action::MoveBackward => "Reculer",
@@ -115,7 +115,7 @@ impl Action {
     }
 
     /// Touches physiques par défaut : positions ZQSD d'un clavier AZERTY (WASD en QWERTY)
-    pub fn default_key(self) -> KeyCode {
+    pub(crate) fn default_key(self) -> KeyCode {
         match self {
             Action::MoveForward => KeyCode::KeyW,
             Action::MoveBackward => KeyCode::KeyS,
@@ -145,12 +145,12 @@ impl Action {
 }
 
 /// Touches réservées au système et à la barre d'objets, jamais attribuables
-pub fn is_reserved_key(key: KeyCode) -> bool {
+pub(crate) fn is_reserved_key(key: KeyCode) -> bool {
     matches!(key, KeyCode::Escape | KeyCode::F9) || hotbar_slot_for(key).is_some()
 }
 
 /// Case de la barre d'objets choisie par une touche de 1 à 9 (rangée des chiffres ou pavé numérique)
-pub fn hotbar_slot_for(key: KeyCode) -> Option<usize> {
+pub(crate) fn hotbar_slot_for(key: KeyCode) -> Option<usize> {
     const ROW: [KeyCode; 9] = [
         KeyCode::Digit1,
         KeyCode::Digit2,
@@ -180,7 +180,7 @@ pub fn hotbar_slot_for(key: KeyCode) -> Option<usize> {
 /// Sauvegardés en JSON à chaque modification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Controls {
+pub(crate) struct Controls {
     bindings: HashMap<Action, KeyCode>,
     /// Caractère réellement imprimé sur chaque touche physique, appris à la frappe
     /// (sans lui, une touche KeyW s'afficherait « W » sur un clavier AZERTY)
@@ -206,7 +206,7 @@ impl Default for Controls {
 impl Controls {
     /// Charge les contrôles depuis `path`, ou les valeurs par défaut si le fichier est absent ou illisible.
     /// Les sauvegardes suivantes écrivent dans `path`.
-    pub fn load_or_default(path: impl AsRef<Path>) -> Self {
+    pub(crate) fn load_or_default(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
         let mut controls = match std::fs::read_to_string(path) {
             Ok(text) => serde_json::from_str::<Controls>(&text).unwrap_or_else(|e| {
@@ -267,7 +267,7 @@ impl Controls {
         self.mouse_sensitivity = self.mouse_sensitivity.clamp(0.1, 5.0);
     }
 
-    pub fn save(&self) {
+    pub(crate) fn save(&self) {
         let Some(path) = &self.path else { return };
         let result = (|| -> std::io::Result<()> {
             if let Some(dir) = path.parent() {
@@ -281,17 +281,17 @@ impl Controls {
         }
     }
 
-    pub fn key(&self, action: Action) -> KeyCode {
+    pub(crate) fn key(&self, action: Action) -> KeyCode {
         self.bindings.get(&action).copied().unwrap_or(action.default_key())
     }
 
-    pub fn action_for(&self, key: KeyCode) -> Option<Action> {
+    pub(crate) fn action_for(&self, key: KeyCode) -> Option<Action> {
         Action::ALL.into_iter().find(|&a| self.key(a) == key)
     }
 
     /// Attribue `key` à `action`. Si une autre action l'utilisait, elle reçoit l'ancienne touche
     /// de `action` (échange) ; elle est alors renvoyée.
-    pub fn rebind(&mut self, action: Action, key: KeyCode) -> Option<Action> {
+    pub(crate) fn rebind(&mut self, action: Action, key: KeyCode) -> Option<Action> {
         if is_reserved_key(key) {
             return None;
         }
@@ -304,12 +304,12 @@ impl Controls {
         swapped
     }
 
-    pub fn reset_bindings(&mut self) {
+    pub(crate) fn reset_bindings(&mut self) {
         self.bindings = Controls::default().bindings;
     }
 
     /// Retient le caractère produit par une touche physique pour l'afficher ensuite
-    pub fn learn_label(&mut self, key: KeyCode, logical: &Key) {
+    pub(crate) fn learn_label(&mut self, key: KeyCode, logical: &Key) {
         if let Key::Character(text) = logical {
             let label = text.to_uppercase();
             if !label.trim().is_empty() && label.chars().count() <= 2 {
@@ -319,7 +319,7 @@ impl Controls {
     }
 
     /// Nom affichable d'une touche physique
-    pub fn key_label(&self, key: KeyCode) -> String {
+    pub(crate) fn key_label(&self, key: KeyCode) -> String {
         if let Some(label) = self.labels.get(&key) {
             return label.clone();
         }
@@ -364,21 +364,21 @@ impl Controls {
     }
 
     /// Nom affichable de la touche d'une action
-    pub fn action_key_label(&self, action: Action) -> String {
+    pub(crate) fn action_key_label(&self, action: Action) -> String {
         self.key_label(self.key(action))
     }
 }
 
 /// Détecte un double appui rapide sur une touche
 #[derive(Debug, Default)]
-pub struct DoubleTap {
+pub(crate) struct DoubleTap {
     last_press: Option<Instant>,
 }
 
 impl DoubleTap {
     /// Enregistre un appui ; renvoie vrai s'il suit le précédent de moins de `DOUBLE_TAP_WINDOW`.
     /// Un double appui est consommé : un troisième appui rapide recommence une nouvelle série.
-    pub fn press(&mut self, now: Instant) -> bool {
+    pub(crate) fn press(&mut self, now: Instant) -> bool {
         let is_double = self.last_press.is_some_and(|t| now.duration_since(t) <= DOUBLE_TAP_WINDOW);
         self.last_press = if is_double { None } else { Some(now) };
         is_double

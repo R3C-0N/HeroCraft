@@ -17,12 +17,12 @@ use herocraft_common::PlanetFace;
 use crate::generator::{ColumnSample, SEA_LEVEL_BLOCKS};
 
 /// Écart en blocs entre deux points du réseau de bruit, à l'horizontale
-pub const CAVE_CELL: i32 = 4;
+pub(crate) const CAVE_CELL: i32 = 4;
 /// Écart en blocs entre deux points du réseau de bruit, en altitude (les bruits varient lentement :
 /// une maille plus haute divise par deux le nombre de points sans changer la forme des grottes)
-pub const CAVE_CELL_Y: i32 = 8;
+pub(crate) const CAVE_CELL_Y: i32 = 8;
 /// Les blocs en dessous de cette altitude ne sont jamais creusés (fond du monde)
-pub const CAVE_FLOOR: i32 = 4;
+pub(crate) const CAVE_FLOOR: i32 = 4;
 /// Profondeur maximale des grottes sous la surface, en blocs
 pub const CAVE_DEPTH: f64 = 40.0;
 
@@ -115,7 +115,7 @@ impl CaveField {
 
     /// Appelle `f` pour chaque bloc creusé de la colonne (x, z) entre les altitudes `ys` : le champ
     /// n'est interpolé en x et z qu'une fois par point du réseau de la colonne
-    pub fn for_each_carved(&self, column: &ColumnSample, x: i32, z: i32, ys: Range<i32>, mut f: impl FnMut(i32)) {
+    pub(crate) fn for_each_carved(&self, column: &ColumnSample, x: i32, z: i32, ys: Range<i32>, mut f: impl FnMut(i32)) {
         let range = carvable_range(column);
         let (start, end) = (ys.start.max(range.start), ys.end.min(range.end));
         let top = column.elevation.floor();
@@ -134,7 +134,7 @@ impl CaveField {
 }
 
 /// Le bloc (x, y, z) d'une face est creusé, calculé pour lui seul (8 points du réseau)
-pub fn block_carved(seed: u64, face: PlanetFace, column: &ColumnSample, x: i32, y: i32, z: i32) -> bool {
+pub(crate) fn block_carved(seed: u64, face: PlanetFace, column: &ColumnSample, x: i32, y: i32, z: i32) -> bool {
     let Some(depth) = carvable_depth(column, y) else {
         return false;
     };

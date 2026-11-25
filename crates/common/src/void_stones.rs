@@ -21,9 +21,9 @@ use serde::{Deserialize, Serialize};
 use crate::items::{items, ItemId};
 
 /// Identifiant de la fiche de la Pierre entière
-pub const VOID_STONE: &str = "voidStone";
+pub(crate) const VOID_STONE: &str = "voidStone";
 /// Identifiant de la fiche d'un fragment de Pierre
-pub const VOID_STONE_FRAGMENT: &str = "voidStoneFragment";
+pub(crate) const VOID_STONE_FRAGMENT: &str = "voidStoneFragment";
 
 /// Ce qu'est un objet du Néant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

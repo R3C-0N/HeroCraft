@@ -349,7 +349,7 @@ impl Atlas {
     }
 
     /// La variante que nomme l'apparence, ramenée à la dernière ; la première si hors bornes
-    pub fn variante_de(&self, cfg: &Appearance) -> Option<&Variante> {
+    pub(crate) fn variante_de(&self, cfg: &Appearance) -> Option<&Variante> {
         let variantes = &self.espece(&cfg.espece).variantes;
         if variantes.is_empty() {
             return None;

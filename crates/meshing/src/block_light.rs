@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use herocraft_common::{opposite_face, FACE_DIRS};
 
 /// Plus haute lumière d'un bloc
-pub const MAX_LIGHT: u8 = 15;
+pub(crate) const MAX_LIGHT: u8 = 15;
 /// Distance au-delà de laquelle une lumière n'éclaire plus rien (elle perd un niveau par bloc)
 pub const LIGHT_REACH: i32 = MAX_LIGHT as i32 - 1;
 
@@ -18,11 +18,11 @@ const SIDE: i32 = 32 + 2 * LIGHT_REACH;
 /// Case déjà lue : bit 7, et les faces qu'elle couvre sur les 6 bits bas (`FACE_DIRS`)
 const KNOWN: u8 = 0x80;
 /// Bloc plein : toutes ses faces couvertes
-pub const FULL: u8 = 0x3F;
+pub(crate) const FULL: u8 = 0x3F;
 
 /// Lumière de chaque case d'un chunk et de sa marge, coordonnées locales au chunk (de
 /// `-LIGHT_REACH` à `32 + LIGHT_REACH`, exclu)
-pub struct LightField {
+pub(crate) struct LightField {
     levels: Vec<u8>,
     /// Faces couvertes de chaque case lue (`KNOWN` en plus)
     covers: Vec<u8>,
@@ -43,7 +43,7 @@ impl LightField {
     /// faces de la case que son bloc couvre entièrement (bit `dir` de `FACE_DIRS`, `FULL` pour un
     /// bloc plein) : la lumière n'entre ni ne sort par une face couverte (un toit d'escaliers, une
     /// dalle l'arrêtent). Chaque case n'est lue qu'une fois. `None` sans source qui atteigne le chunk.
-    pub fn compute(sources: &[(i32, i32, i32, u8)], mut covers: impl FnMut(i32, i32, i32) -> u8) -> Option<Self> {
+    pub(crate) fn compute(sources: &[(i32, i32, i32, u8)], mut covers: impl FnMut(i32, i32, i32) -> u8) -> Option<Self> {
         // Une lumière qui n'atteint pas le chunk (ni la rangée de cases qui borde ses faces) ne sert à rien
         let reaches = |&&(x, y, z, level): &&(i32, i32, i32, u8)| {
             let gap = |v: i32| if v < -1 { -1 - v } else if v > 32 { v - 32 } else { 0 };
@@ -96,21 +96,21 @@ impl LightField {
 
     /// La case est un bloc plein (lu pendant la propagation ; une case jamais atteinte compte comme vide)
     #[inline(always)]
-    pub fn is_full(&self, x: i32, y: i32, z: i32) -> bool {
+    pub(crate) fn is_full(&self, x: i32, y: i32, z: i32) -> bool {
         index(x, y, z).is_some_and(|i| self.covers[i] & FULL == FULL)
     }
 
     /// Lumière de la case (0 hors du champ, et dans un bloc plein)
     #[inline(always)]
-    pub fn level(&self, x: i32, y: i32, z: i32) -> u8 {
+    pub(crate) fn level(&self, x: i32, y: i32, z: i32) -> u8 {
         index(x, y, z).map_or(0, |i| self.levels[i])
     }
 }
 
 /// Intensité portée par un sommet qui ne brille pas lui-même : au plus juste sous `EMISSIVE`
-pub const LIT_MAX: f32 = 0.96;
+pub(crate) const LIT_MAX: f32 = 0.96;
 /// Intensité des faces d'un bloc qui éclaire : le shader les fait briller (flamme, lanterne)
-pub const EMISSIVE: f32 = 1.0;
+pub(crate) const EMISSIVE: f32 = 1.0;
 
 /// Intensité rendue d'un niveau de lumière (moyen, d'où les fractions) : chaque niveau en moins
 /// éclaire d'un cinquième de moins, et l'éclat tombe à zéro au niveau 0

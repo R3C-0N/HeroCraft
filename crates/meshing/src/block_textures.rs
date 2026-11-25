@@ -40,10 +40,10 @@ pub struct BlockTextureSet {
 
 /// Bords d'une face reliés à un bloc du même genre (bits du masque d'une texture connectée), dans
 /// le repère de la texture : gauche (u = 0), droite, haut (v = 0), bas
-pub const CONNECTED_LEFT: u8 = 1;
-pub const CONNECTED_RIGHT: u8 = 2;
-pub const CONNECTED_TOP: u8 = 4;
-pub const CONNECTED_BOTTOM: u8 = 8;
+pub(crate) const CONNECTED_LEFT: u8 = 1;
+pub(crate) const CONNECTED_RIGHT: u8 = 2;
+pub(crate) const CONNECTED_TOP: u8 = 4;
+pub(crate) const CONNECTED_BOTTOM: u8 = 8;
 /// Cadre d'une texture connectée : un liseré sombre au bord, un clair juste dedans
 const FRAME_OUTER: [f32; 3] = [0.40, 0.45, 0.50];
 const FRAME_INNER: [f32; 3] = [0.80, 0.86, 0.90];
@@ -132,7 +132,7 @@ impl BlockTextureSet {
     /// Envoie les couches à la carte graphique : le groupe de liaison 2 du shader du terrain
     /// Genre de végétation de chaque couche, d'après le nom de sa texture : feuillus, conifères,
     /// herbe ou autre (`Foliage`). Les variantes des textures connectées (verre) sont « autre ».
-    pub fn foliage_classes(&self) -> Vec<Foliage> {
+    pub(crate) fn foliage_classes(&self) -> Vec<Foliage> {
         let files = blocks().texture_files();
         (0..self.layers.len()).map(|i| files.get(i).map_or(Foliage::Other, |f| Foliage::of_texture(f))).collect()
     }
@@ -245,7 +245,7 @@ const FOLIAGE_WORDS: usize = 256;
 /// Genre de végétation d'une texture, que les saisons colorent (shader.wgsl, `season_color`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
-pub enum Foliage {
+pub(crate) enum Foliage {
     Other = 0,
     /// Feuillus : roux à l'automne, dépouillés l'hiver
     Deciduous = 1,
@@ -257,7 +257,7 @@ pub enum Foliage {
 
 impl Foliage {
     /// D'après le nom du fichier de la texture
-    pub fn of_texture(file: &str) -> Foliage {
+    pub(crate) fn of_texture(file: &str) -> Foliage {
         let name = file.rsplit('/').next().unwrap_or(file).to_lowercase();
         if name.contains("darkgreenleaf") || name.contains("needle") || name.contains("spruce") {
             Foliage::Conifer

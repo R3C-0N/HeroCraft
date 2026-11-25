@@ -17,7 +17,7 @@ use crate::ui_skin::{ButtonKind, SkinButton};
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UiAction {
+pub(crate) enum UiAction {
     GenerateNewPlanet,
     ToggleGroundCamera,
     ToggleAutoRotate,
@@ -52,7 +52,7 @@ pub enum UiAction {
 
 /// État de la partie en ligne, affiché dans la page Multijoueur
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NetStatus {
+pub(crate) enum NetStatus {
     Solo,
     /// Connexion en cours à cette adresse
     Connecting(String),
@@ -64,14 +64,14 @@ pub enum NetStatus {
 
 /// Partie trouvée sur le réseau local
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LanEntry {
+pub(crate) struct LanEntry {
     pub name: String,
     pub addr: String,
     pub players: u32,
 }
 
 /// Page Multijoueur : nom du joueur, parties du réseau local, adresse saisie
-pub struct MultiplayerUi {
+pub(crate) struct MultiplayerUi {
     pub pseudo: String,
     /// Adresse saisie à la main
     pub address: String,
@@ -100,14 +100,14 @@ impl Default for MultiplayerUi {
 }
 
 // Réglages graphiques, partagés avec les passes de rendu (crate herocraft_render)
-pub use herocraft_render::settings::*;
+pub(crate) use herocraft_render::settings::*;
 
 /// Durée d'affichage du dernier à-coup sous le compteur FPS, en secondes
 const HITCH_DISPLAY_SECS: f32 = 5.0;
 
 /// Page affichée dans le menu de pause (Échap)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MenuPage {
+pub(crate) enum MenuPage {
     /// Accueil : reprendre, options, commandes, quitter
     Main,
     /// Sous-menu des réglages, rangés par onglets
@@ -120,7 +120,7 @@ pub enum MenuPage {
 
 /// Onglets du sous-menu Options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum OptionsTab {
+pub(crate) enum OptionsTab {
     Display,
     Lighting,
     Clouds,
@@ -131,7 +131,7 @@ pub enum OptionsTab {
 }
 
 impl OptionsTab {
-    pub const ALL: [OptionsTab; 7] = [
+    pub(crate) const ALL: [OptionsTab; 7] = [
         OptionsTab::Display,
         OptionsTab::Lighting,
         OptionsTab::Clouds,
@@ -141,7 +141,7 @@ impl OptionsTab {
         OptionsTab::Audio,
     ];
 
-    pub fn icon(self) -> &'static str {
+    pub(crate) fn icon(self) -> &'static str {
         match self {
             OptionsTab::Display => "🖥",
             OptionsTab::Lighting => "🌙",
@@ -153,7 +153,7 @@ impl OptionsTab {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             OptionsTab::Display => "Affichage",
             OptionsTab::Lighting => "Éclairage",
@@ -165,7 +165,7 @@ impl OptionsTab {
         }
     }
 
-    pub fn subtitle(self) -> &'static str {
+    pub(crate) fn subtitle(self) -> &'static str {
         match self {
             OptionsTab::Display => "Fenêtre, synchronisation et distance de détail",
             OptionsTab::Lighting => "Intensité du Soleil, de la Lune et du ciel",
@@ -197,7 +197,7 @@ const OPTIONS_SIDEBAR_MIN_WIDTH: f32 = 560.0;
 const OPTIONS_SIDEBAR_WIDTH: f32 = 150.0;
 
 /// Échanges ouverts avec un habitant ou un voyageur
-pub struct TradeScreen {
+pub(crate) struct TradeScreen {
     /// Créature qui l'incarne (les échanges se ferment s'il s'éloigne)
     pub creature_id: herocraft_common::CreatureId,
     pub card: std::sync::Arc<herocraft_common::VillagerCard>,
@@ -205,7 +205,7 @@ pub struct TradeScreen {
     notice: Option<String>,
 }
 
-pub struct UiState {
+pub(crate) struct UiState {
     pub ctx: egui::Context,
     pub raw_input: egui::RawInput,
     /// Touches de modification tenues (egui ne les garde plus dans `RawInput`)
@@ -308,7 +308,7 @@ pub struct UiState {
 }
 
 impl UiState {
-    pub fn new(initial_seed: u64) -> Self {
+    pub(crate) fn new(initial_seed: u64) -> Self {
         herocraft_common::prof_scope!("ui::UiState::new");
         let ctx = egui::Context::default();
         Self::apply_custom_theme(&ctx);
@@ -378,12 +378,12 @@ impl UiState {
     }
 
     /// Le créateur de légende tient l'écran
-    pub fn creator_open(&self) -> bool {
+    pub(crate) fn creator_open(&self) -> bool {
         self.creator.is_some()
     }
 
     /// Ouvre le créateur, si le héros n'a pas encore de légende
-    pub fn open_creator(&mut self) {
+    pub(crate) fn open_creator(&mut self) {
         if self.legend.is_none() && self.creator.is_none() {
             self.set_inventory_open(false);
             self.creator = Some(HeroCreator::new());
@@ -391,7 +391,7 @@ impl UiState {
     }
 
     /// Légende du héros dans le monde en cours : le créateur se referme quand elle est là
-    pub fn set_legend(&mut self, legend: Option<Legend>) {
+    pub(crate) fn set_legend(&mut self, legend: Option<Legend>) {
         if legend.is_some() {
             self.creator = None;
         }
@@ -400,14 +400,14 @@ impl UiState {
     }
 
     /// La légende que le créateur vient de sceller (une seule fois)
-    pub fn take_sealed_legend(&mut self) -> Option<Legend> {
+    pub(crate) fn take_sealed_legend(&mut self) -> Option<Legend> {
         self.sealed_legend.take()
     }
 
     /// Applique le thème de l'ancien Terasology : textures de bois et de fer, polices Grenze et
     /// Uncial Antiqua, texte crème. Les widgets egui sans texture (curseurs, listes déroulantes,
     /// champs) reprennent les mêmes teintes de bois.
-    pub fn apply_custom_theme(ctx: &egui::Context) {
+    pub(crate) fn apply_custom_theme(ctx: &egui::Context) {
         use crate::ui_skin::{TEXT, WOOD, WOOD_DARK, WOOD_DEEP, WOOD_LIGHT, WOOD_MID};
         crate::ui_skin::install(ctx);
 
@@ -476,26 +476,26 @@ impl UiState {
         ctx.set_global_style(style);
     }
 
-    pub fn set_scale_factor(&mut self, factor: f32) {
+    pub(crate) fn set_scale_factor(&mut self, factor: f32) {
         self.scale_factor = factor.max(0.1_f32);
     }
 
-    pub fn set_screen_size(&mut self, width: f32, height: f32) {
+    pub(crate) fn set_screen_size(&mut self, width: f32, height: f32) {
         self.screen_width = width;
         self.screen_height = height;
     }
 
-    pub fn set_seed(&mut self, seed: u64) {
+    pub(crate) fn set_seed(&mut self, seed: u64) {
         self.current_seed = seed;
     }
 
-    pub fn set_auto_rotate(&mut self, auto_rotate: bool) {
+    pub(crate) fn set_auto_rotate(&mut self, auto_rotate: bool) {
         self.auto_rotate = auto_rotate;
     }
 
     /// Règle les valeurs par défaut sur la carte graphique trouvée au lancement : sur une puce
     /// intégrée, ombres et rayons allégés et MSAA coupé
-    pub fn adapt_to_gpu(&mut self, integrated_gpu: bool) {
+    pub(crate) fn adapt_to_gpu(&mut self, integrated_gpu: bool) {
         self.integrated_gpu = integrated_gpu;
         self.shadow_settings.fine = !integrated_gpu;
         self.atmosphere_settings.god_rays_fine = !integrated_gpu;
@@ -521,13 +521,13 @@ impl UiState {
     }
 
     /// Préréglage de qualité qui correspond aux réglages actuels (`None` : réglages personnalisés)
-    pub fn graphics_quality(&self) -> Option<GraphicsQuality> {
+    pub(crate) fn graphics_quality(&self) -> Option<GraphicsQuality> {
         GraphicsQuality::ALL.into_iter().find(|&q| q.effects(self.integrated_gpu) == self.quality_effects(q))
     }
 
     /// Applique un préréglage de qualité. Renvoie vrai si la distance ou la précision du relief a
     /// changé (le LOD est alors à recalculer).
-    pub fn apply_graphics_quality(&mut self, quality: GraphicsQuality) -> bool {
+    pub(crate) fn apply_graphics_quality(&mut self, quality: GraphicsQuality) -> bool {
         let e = quality.effects(self.integrated_gpu);
         self.shadow_settings.enabled = e.shadows;
         self.shadow_settings.cloud_shadows = e.cloud_shadows;
@@ -542,15 +542,15 @@ impl UiState {
     }
 
     /// Une image a duré `ms` millisecondes : affichée quelques secondes sous le compteur FPS
-    pub fn set_hitch(&mut self, ms: f32) {
+    pub(crate) fn set_hitch(&mut self, ms: f32) {
         self.hitch = Some((ms, std::time::Instant::now()));
     }
 
-    pub fn set_fps(&mut self, fps: u32) {
+    pub(crate) fn set_fps(&mut self, fps: u32) {
         self.current_fps = fps;
     }
 
-    pub fn set_settings_open(&mut self, is_open: bool) {
+    pub(crate) fn set_settings_open(&mut self, is_open: bool) {
         self.is_settings_open = is_open;
         self.rebinding = None;
         if is_open {
@@ -563,12 +563,12 @@ impl UiState {
     }
 
     /// Un écran de jeu (inventaire, compétences, créateur de légende) est ouvert par-dessus la partie
-    pub fn screen_open(&self) -> bool {
+    pub(crate) fn screen_open(&self) -> bool {
         self.inventory_open || self.skills_open || self.trade.is_some() || self.map_open || self.creator_open()
     }
 
     /// Ouvre les échanges avec l'habitant qu'incarne la créature `creature_id`
-    pub fn open_trade(&mut self, creature_id: herocraft_common::CreatureId, card: std::sync::Arc<herocraft_common::VillagerCard>) {
+    pub(crate) fn open_trade(&mut self, creature_id: herocraft_common::CreatureId, card: std::sync::Arc<herocraft_common::VillagerCard>) {
         self.set_inventory_open(false);
         self.skills_open = false;
         self.map_open = false;
@@ -576,7 +576,7 @@ impl UiState {
     }
 
     /// Ouvre ou referme l'écran de la roue des compétences (l'inventaire se referme)
-    pub fn set_skills_open(&mut self, open: bool) {
+    pub(crate) fn set_skills_open(&mut self, open: bool) {
         if open {
             self.set_inventory_open(false);
             self.map_open = false;
@@ -585,7 +585,7 @@ impl UiState {
     }
 
     /// Ouvre ou referme l'écran de carte, centré sur le joueur (les autres écrans se referment)
-    pub fn set_map_open(&mut self, open: bool) {
+    pub(crate) fn set_map_open(&mut self, open: bool) {
         if open {
             self.set_inventory_open(false);
             self.skills_open = false;
@@ -596,7 +596,7 @@ impl UiState {
 
     /// Ouvre ou referme l'écran d'inventaire. Refermé, la pile tenue à la souris retourne dans
     /// l'inventaire.
-    pub fn set_inventory_open(&mut self, open: bool) {
+    pub(crate) fn set_inventory_open(&mut self, open: bool) {
         if !open {
             self.inventory.return_held();
         } else {
@@ -608,7 +608,7 @@ impl UiState {
     }
 
     /// Ouvre l'écran d'inventaire devant un établi : ses recettes s'ajoutent à celles faites à la main
-    pub fn open_station(&mut self, at: StationAt) {
+    pub(crate) fn open_station(&mut self, at: StationAt) {
         self.set_inventory_open(true);
         self.station = Some(at);
     }
@@ -616,28 +616,28 @@ impl UiState {
     /// Une image de l'interface pour les tests : les textures produites par egui sont jetées, sans
     /// quoi egui (0.37 et plus) fait avorter le test au moment de libérer le `TexturesDelta`
     #[cfg(test)]
-    pub fn test_frame(&mut self, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
+    pub(crate) fn test_frame(&mut self, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
         let (mut output, action) = self.update_ui(is_ground);
         output.textures_delta.clear();
         (output, action)
     }
 
     #[cfg(test)]
-    pub fn toggle_settings(&mut self) -> bool {
+    pub(crate) fn toggle_settings(&mut self) -> bool {
         self.set_settings_open(!self.is_settings_open);
         self.is_settings_open
     }
 
     /// Ouvre le menu de pause directement sur une page
     #[cfg(test)]
-    pub fn open_menu_at(&mut self, page: MenuPage) {
+    pub(crate) fn open_menu_at(&mut self, page: MenuPage) {
         self.set_settings_open(true);
         self.menu_page = page;
     }
 
     /// Touche Échap : ouvre le menu, remonte d'un sous-menu vers l'accueil, ou referme le menu
     /// depuis l'accueil. Renvoie l'état d'ouverture du menu.
-    pub fn handle_escape(&mut self) -> bool {
+    pub(crate) fn handle_escape(&mut self) -> bool {
         if self.trade.is_some() {
             self.trade = None;
         } else if self.inventory_open {
@@ -659,7 +659,7 @@ impl UiState {
     }
 
     /// Attribue la touche pressée à l'action en attente de la page Commandes et enregistre
-    pub fn finish_rebind(&mut self, key: KeyCode) {
+    pub(crate) fn finish_rebind(&mut self, key: KeyCode) {
         let Some(action) = self.rebinding else { return };
         if is_reserved_key(key) {
             return;
@@ -678,14 +678,14 @@ impl UiState {
     }
 
     /// Capture ou libère le pointeur. À la capture, egui oublie le survol en cours.
-    pub fn set_pointer_captured(&mut self, captured: bool) {
+    pub(crate) fn set_pointer_captured(&mut self, captured: bool) {
         if captured && !self.pointer_captured {
             self.raw_input.events.push(egui::Event::PointerGone);
         }
         self.pointer_captured = captured;
     }
 
-    pub fn active_filter(&self) -> herocraft_world::VisualizationFilter {
+    pub(crate) fn active_filter(&self) -> herocraft_world::VisualizationFilter {
         if self.show_tectonics {
             herocraft_world::VisualizationFilter::Tectonics
         } else if self.show_ocean_currents {
@@ -696,7 +696,7 @@ impl UiState {
     }
 
     /// Transmet les événements de fenêtre Winit à egui
-    pub fn handle_event(&mut self, event: &WindowEvent) {
+    pub(crate) fn handle_event(&mut self, event: &WindowEvent) {
         herocraft_common::prof_scope!("ui::handle_event");
         let ppp = self.scale_factor.max(0.1_f32);
 
@@ -776,7 +776,7 @@ impl UiState {
     }
 
     /// Construit l'interface graphique immédiate pour la frame courante
-    pub fn update_ui(&mut self, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
+    pub(crate) fn update_ui(&mut self, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
         herocraft_common::prof_scope!("ui::update_ui");
         let mut raw_input = std::mem::take(&mut self.raw_input);
         let ppp = self.scale_factor.max(0.1_f32);
@@ -2184,7 +2184,7 @@ fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
 
 /// Onglet du panneau de fabrication : la rubrique de ce que fabrique la recette
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum CraftTab {
+pub(crate) enum CraftTab {
     All,
     Weapons,
     Armor,
@@ -2195,10 +2195,10 @@ pub enum CraftTab {
 }
 
 impl CraftTab {
-    pub const ALL: [CraftTab; 7] =
+    pub(crate) const ALL: [CraftTab; 7] =
         [CraftTab::All, CraftTab::Weapons, CraftTab::Armor, CraftTab::Tools, CraftTab::Cooking, CraftTab::Materials, CraftTab::Building];
 
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             CraftTab::All => "Tout",
             CraftTab::Weapons => "Armes",
@@ -2211,7 +2211,7 @@ impl CraftTab {
     }
 
     /// Onglet d'une recette, d'après la rubrique de la fiche de ce qu'elle fabrique
-    pub fn of(recipe: &Recipe) -> CraftTab {
+    pub(crate) fn of(recipe: &Recipe) -> CraftTab {
         let category = match recipe.result.block() {
             Some(block) => blocks().get(block).map(|s| s.category.as_str()),
             None => items().get(recipe.result).map(|s| s.category.as_str()),
@@ -2275,14 +2275,14 @@ fn fold(text: &str) -> String {
 }
 
 /// Une section du panneau : un palier, ou une rubrique dans l'onglet Tout
-pub struct CraftSection {
+pub(crate) struct CraftSection {
     pub title: String,
     /// Recettes (rangs dans `crafting().recipes`) et nombre de fois faisables
     pub recipes: Vec<(usize, u32)>,
 }
 
 impl CraftSection {
-    pub fn craftable(&self) -> usize {
+    pub(crate) fn craftable(&self) -> usize {
         self.recipes.iter().filter(|&&(_, times)| times > 0).count()
     }
 }
@@ -2291,7 +2291,7 @@ impl CraftSection {
 /// (à la main, ou à l'établi ouvert), en onglets par rubrique et en sections par palier, celles
 /// qu'il peut faire d'abord, avec une recherche par nom
 #[derive(Default)]
-pub struct CraftingPanel {
+pub(crate) struct CraftingPanel {
     pub search: String,
     /// Ne montrer que les recettes dont l'inventaire a tous les ingrédients
     pub only_craftable: bool,
@@ -2303,11 +2303,11 @@ pub struct CraftingPanel {
 
 impl CraftingPanel {
     /// Onglet ouvert là où se tient le joueur
-    pub fn tab(&self, at: Option<StationAt>) -> CraftTab {
+    pub(crate) fn tab(&self, at: Option<StationAt>) -> CraftTab {
         self.tabs.get(&at.map(|a| a.station)).copied().unwrap_or(CraftTab::All)
     }
 
-    pub fn set_tab(&mut self, at: Option<StationAt>, tab: CraftTab) {
+    pub(crate) fn set_tab(&mut self, at: Option<StationAt>, tab: CraftTab) {
         self.tabs.insert(at.map(|a| a.station), tab);
     }
 
@@ -2327,7 +2327,7 @@ impl CraftingPanel {
     }
 
     /// Onglets qui ont des recettes ici, avec le nombre de recettes faisables de chacun
-    pub fn tabs_here(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(CraftTab, usize)> {
+    pub(crate) fn tabs_here(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(CraftTab, usize)> {
         let matching = self.matching(inventory, at);
         let recipes = &crafting().recipes;
         CraftTab::ALL
@@ -2343,13 +2343,13 @@ impl CraftingPanel {
 
     /// Recettes de l'onglet ouvert, à plat : les faisables d'abord, puis par nom
     #[cfg(test)]
-    pub fn visible(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(usize, u32)> {
+    pub(crate) fn visible(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(usize, u32)> {
         self.sections(inventory, at).into_iter().flat_map(|s| s.recipes).collect::<Vec<_>>().sorted_by_craftable(at)
     }
 
     /// Sections de l'onglet ouvert : par palier (armes, armures, outils), par rubrique dans l'onglet
     /// Tout, une seule sinon. Dans chacune, les faisables d'abord, puis par nom.
-    pub fn sections(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<CraftSection> {
+    pub(crate) fn sections(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<CraftSection> {
         let tab = self.tab(at);
         let recipes = &crafting().recipes;
         let mut keyed: Vec<((usize, String), (usize, u32))> = self
@@ -2621,7 +2621,7 @@ fn red_vignette(screen: egui::Rect, alpha: u8) -> egui::Shape {
 /// Cadre commun des panneaux du HUD : bois sombre à liseré, comme les bulles de l'ancien jeu
 /// Ce que l'affichage montre de l'arme en main
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct WeaponHud {
+pub(crate) struct WeaponHud {
     /// Arbalète : carreaux prêts, contenance, rechargement restant et total (secondes)
     pub magazine: Option<(u8, u8, f32, f32)>,
     /// Munition spéciale chargée : nom de la compétence, tirs restants

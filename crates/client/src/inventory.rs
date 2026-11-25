@@ -13,13 +13,13 @@ use herocraft_common::{blocks, items, BlockId, EquipSlot, Ingredient, ItemId, Re
 use serde::{Deserialize, Serialize};
 
 /// Cases de la barre d'objets, en bas de l'écran
-pub const HOTBAR_SLOTS: usize = 9;
+pub(crate) const HOTBAR_SLOTS: usize = 9;
 /// Cases du sac, visibles dans l'écran d'inventaire
-pub const BAG_SLOTS: usize = 27;
+pub(crate) const BAG_SLOTS: usize = 27;
 /// Cases où vont les objets ramassés ou fabriqués : la barre d'objets puis le sac
-pub const STORAGE_SLOTS: usize = HOTBAR_SLOTS + BAG_SLOTS;
+pub(crate) const STORAGE_SLOTS: usize = HOTBAR_SLOTS + BAG_SLOTS;
 /// Ce que porte chaque case d'équipement, dans l'ordre des cases (comme sur la branche `develop`)
-pub const EQUIPMENT: [EquipSlot; 8] = [
+pub(crate) const EQUIPMENT: [EquipSlot; 8] = [
     EquipSlot::Head,
     EquipSlot::Chest,
     EquipSlot::Legs,
@@ -30,17 +30,17 @@ pub const EQUIPMENT: [EquipSlot; 8] = [
     EquipSlot::Ring,
 ];
 /// Première case d'équipement, juste après le sac
-pub const FIRST_EQUIPMENT: usize = STORAGE_SLOTS;
-pub const TOTAL_SLOTS: usize = STORAGE_SLOTS + EQUIPMENT.len();
+pub(crate) const FIRST_EQUIPMENT: usize = STORAGE_SLOTS;
+pub(crate) const TOTAL_SLOTS: usize = STORAGE_SLOTS + EQUIPMENT.len();
 
 /// Emplacement d'équipement de la case `index`, si c'en est une
-pub fn equipment_kind(index: usize) -> Option<EquipSlot> {
+pub(crate) fn equipment_kind(index: usize) -> Option<EquipSlot> {
     index.checked_sub(FIRST_EQUIPMENT).and_then(|i| EQUIPMENT.get(i)).copied()
 }
 
 /// La case `index` peut recevoir `item` : toute case de rangement, ou la case d'équipement de son
 /// emplacement
-pub fn fits(index: usize, item: ItemId) -> bool {
+pub(crate) fn fits(index: usize, item: ItemId) -> bool {
     match equipment_kind(index) {
         Some(kind) => item.equip_slot() == Some(kind),
         None => index < STORAGE_SLOTS,
@@ -48,16 +48,16 @@ pub fn fits(index: usize, item: ItemId) -> bool {
 }
 
 /// La pioche du paquetage du soldat
-pub const SOLDIER_PICKAXE: &str = "ironPickaxe";
+pub(crate) const SOLDIER_PICKAXE: &str = "ironPickaxe";
 
 /// Une pioche, quel qu'en soit le métal
-pub fn is_pickaxe(item: ItemId) -> bool {
+pub(crate) fn is_pickaxe(item: ItemId) -> bool {
     item.block().is_none() && herocraft_common::items().get(item).is_some_and(|sheet| sheet.id.to_ascii_lowercase().contains("pickaxe"))
 }
 
 /// Pile de blocs ou d'objets identiques dans une case
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ItemStack {
+pub(crate) struct ItemStack {
     /// `block` dans les inventaires enregistrés avant les objets : les numéros sont les mêmes
     #[serde(alias = "block")]
     pub item: ItemId,
@@ -66,7 +66,7 @@ pub struct ItemStack {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Inventory {
+pub(crate) struct Inventory {
     /// Barre d'objets (cases 0 à 8), sac (9 à 35) puis équipement (36 à 43)
     slots: Vec<Option<ItemStack>>,
     /// Case choisie de la barre d'objets
@@ -87,7 +87,7 @@ impl Default for Inventory {
 impl Inventory {
     /// Charge l'inventaire depuis `path`, ou un inventaire vide si le fichier est absent ou
     /// illisible. Les sauvegardes suivantes écrivent dans `path`.
-    pub fn load_or_default(path: impl AsRef<Path>) -> Self {
+    pub(crate) fn load_or_default(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
         let mut inventory = match std::fs::read_to_string(path) {
             Ok(text) => serde_json::from_str::<Inventory>(&text).unwrap_or_else(|e| {
@@ -131,7 +131,7 @@ impl Inventory {
     /// Le paquetage du soldat de la vision (bible, section 8) : maille de fer portée, épée en
     /// main, et une pioche rangée dans le sac (le tutoriel la fait prendre). Il ne s'enregistre
     /// nulle part : l'inventaire du présent revient au retour.
-    pub fn soldier_kit() -> Self {
+    pub(crate) fn soldier_kit() -> Self {
         let mut kit = Self::default();
         let find = |id: &str| herocraft_common::items().find(id);
         for (i, id) in ["ironMailHelmet", "ironMailChestplate", "ironMailLeggings", "ironMailBoots"].into_iter().enumerate() {
@@ -149,16 +149,16 @@ impl Inventory {
     }
 
     /// Une pioche est dans la barre d'objets
-    pub fn pickaxe_in_hotbar(&self) -> bool {
+    pub(crate) fn pickaxe_in_hotbar(&self) -> bool {
         self.slots[..HOTBAR_SLOTS].iter().flatten().any(|s| is_pickaxe(s.item))
     }
 
     /// Le joueur tient une pioche
-    pub fn holds_pickaxe(&self) -> bool {
+    pub(crate) fn holds_pickaxe(&self) -> bool {
         self.selected_item().is_some_and(is_pickaxe)
     }
 
-    pub fn save(&self) {
+    pub(crate) fn save(&self) {
         let Some(path) = &self.path else { return };
         let result = (|| -> std::io::Result<()> {
             if let Some(dir) = path.parent() {
@@ -172,43 +172,43 @@ impl Inventory {
         }
     }
 
-    pub fn slot(&self, index: usize) -> Option<ItemStack> {
+    pub(crate) fn slot(&self, index: usize) -> Option<ItemStack> {
         self.slots.get(index).copied().flatten()
     }
 
-    pub fn selected(&self) -> usize {
+    pub(crate) fn selected(&self) -> usize {
         self.selected
     }
 
-    pub fn select(&mut self, index: usize) {
+    pub(crate) fn select(&mut self, index: usize) {
         if index < HOTBAR_SLOTS {
             self.selected = index;
         }
     }
 
     /// Molette : `steps` positif avance vers la droite de la barre, en bouclant
-    pub fn scroll(&mut self, steps: i32) {
+    pub(crate) fn scroll(&mut self, steps: i32) {
         self.selected = (self.selected as i32 + steps).rem_euclid(HOTBAR_SLOTS as i32) as usize;
     }
 
     /// Bloc de la case choisie, à poser au clic droit (aucun si elle tient un objet)
-    pub fn selected_block(&self) -> Option<BlockId> {
+    pub(crate) fn selected_block(&self) -> Option<BlockId> {
         self.slot(self.selected).and_then(|s| s.item.block())
     }
 
     /// Bloc ou objet de la case choisie
-    pub fn selected_item(&self) -> Option<ItemId> {
+    pub(crate) fn selected_item(&self) -> Option<ItemId> {
         self.slot(self.selected).map(|s| s.item)
     }
 
     /// Aliment de la case choisie et la satiété qu'il rend, à manger au clic droit
-    pub fn selected_food(&self) -> Option<(ItemId, f32)> {
+    pub(crate) fn selected_food(&self) -> Option<(ItemId, f32)> {
         let item = self.slot(self.selected)?.item;
         Some((item, item.satiety()?))
     }
 
     /// Retire un exemplaire de la case choisie, bloc ou objet (graine semée, aliment mangé ou donné)
-    pub fn consume_selected(&mut self) -> Option<ItemId> {
+    pub(crate) fn consume_selected(&mut self) -> Option<ItemId> {
         let slot = &mut self.slots[self.selected];
         let stack = slot.as_mut()?;
         let item = stack.item;
@@ -221,7 +221,7 @@ impl Inventory {
 
     /// Retire un bloc de la case choisie (rien si elle tient un objet)
     #[cfg(test)]
-    pub fn take_selected(&mut self) -> Option<BlockId> {
+    pub(crate) fn take_selected(&mut self) -> Option<BlockId> {
         let slot = &mut self.slots[self.selected];
         let stack = slot.as_mut()?;
         let block = stack.item.block()?;
@@ -233,12 +233,12 @@ impl Inventory {
     }
 
     /// Une munition de ce type dans la barre ou le sac (la barre d'abord), sans la retirer
-    pub fn find_ammo(&self, kind: herocraft_common::AmmoKind) -> Option<ItemId> {
+    pub(crate) fn find_ammo(&self, kind: herocraft_common::AmmoKind) -> Option<ItemId> {
         self.slots[..STORAGE_SLOTS].iter().flatten().find(|s| s.item.block().is_none() && items().get(s.item).is_some_and(|sheet| sheet.ammo == Some(kind))).map(|s| s.item)
     }
 
     /// Retire un exemplaire de `item` (la barre d'abord) ; faux s'il n'y en a pas
-    pub fn take_one(&mut self, item: ItemId) -> bool {
+    pub(crate) fn take_one(&mut self, item: ItemId) -> bool {
         let Some(slot) = self.slots[..STORAGE_SLOTS].iter_mut().find(|s| s.is_some_and(|s| s.item == item)) else { return false };
         if let Some(stack) = slot.as_mut() {
             stack.count -= 1;
@@ -251,7 +251,7 @@ impl Inventory {
 
     /// Range un bloc ou un objet : d'abord sur une pile du même, sinon dans la première case vide
     /// (barre d'objets puis sac, jamais l'équipement). Renvoie faux si l'inventaire est plein.
-    pub fn add(&mut self, item: impl Into<ItemId>) -> bool {
+    pub(crate) fn add(&mut self, item: impl Into<ItemId>) -> bool {
         let item = item.into();
         let stackable = self.slots[..STORAGE_SLOTS].iter().position(|s| s.is_some_and(|s| s.item == item && s.count < item.max_stack()));
         if let Some(stack) = stackable.and_then(|i| self.slots[i].as_mut()) {
@@ -268,55 +268,55 @@ impl Inventory {
     }
 
     /// Range jusqu'à `count` exemplaires. Renvoie le nombre rangé.
-    pub fn add_many(&mut self, item: impl Into<ItemId>, count: u16) -> u16 {
+    pub(crate) fn add_many(&mut self, item: impl Into<ItemId>, count: u16) -> u16 {
         let item = item.into();
         (0..count).take_while(|_| self.add(item)).count() as u16
     }
 
     /// Un exemplaire de plus trouverait sa place
-    pub fn has_room_for(&self, item: impl Into<ItemId>) -> bool {
+    pub(crate) fn has_room_for(&self, item: impl Into<ItemId>) -> bool {
         let item = item.into();
         self.slots[..STORAGE_SLOTS].iter().any(|s| s.is_none_or(|s| s.item == item && s.count < item.max_stack()))
     }
 
     /// Nombre total d'un bloc ou d'un objet dans la barre et le sac (ce qui est porté ne compte
     /// pas : la fabrication n'y prend rien)
-    pub fn count(&self, item: impl Into<ItemId>) -> u32 {
+    pub(crate) fn count(&self, item: impl Into<ItemId>) -> u32 {
         let item = item.into();
         self.slots[..STORAGE_SLOTS].iter().flatten().filter(|s| s.item == item).map(|s| s.count as u32).sum()
     }
 
     /// Ce que porte la case d'équipement `i` (de 0 à 7, dans l'ordre de `EQUIPMENT`)
-    pub fn equipped(&self, i: usize) -> Option<ItemStack> {
+    pub(crate) fn equipped(&self, i: usize) -> Option<ItemStack> {
         self.slot(FIRST_EQUIPMENT + i)
     }
 
     /// Pièces portées, dans l'ordre des cases d'équipement
-    pub fn worn(&self) -> Vec<ItemId> {
+    pub(crate) fn worn(&self) -> Vec<ItemId> {
         (0..EQUIPMENT.len()).filter_map(|i| self.equipped(i)).map(|stack| stack.item).collect()
     }
 
     /// Protection totale de ce qui est porté : la somme de la caractéristique `Protection` des
     /// pièces
-    pub fn protection(&self) -> u32 {
+    pub(crate) fn protection(&self) -> u32 {
         items().protection(self.worn()) as u32
     }
 
     /// Exemplaires d'un ingrédient, toutes ses variantes comprises
-    pub fn count_ingredient(&self, ingredient: &Ingredient) -> u32 {
+    pub(crate) fn count_ingredient(&self, ingredient: &Ingredient) -> u32 {
         ingredient.options.iter().map(|&item| self.count(item)).sum()
     }
 
     /// Nombre de fois que la recette peut se faire avec ce que contient l'inventaire (sans
     /// compter la place pour ce qu'elle donne)
-    pub fn craftable_times(&self, recipe: &Recipe) -> u32 {
+    pub(crate) fn craftable_times(&self, recipe: &Recipe) -> u32 {
         recipe.ingredients.iter().map(|i| self.count_ingredient(i) / i.count as u32).min().unwrap_or(0)
     }
 
     /// Fabrique une fois la recette : retire ses ingrédients (le sac d'abord, la barre d'objets
     /// ensuite, jamais ce qui est porté) et range ce qu'elle donne. Renvoie faux, sans rien toucher, s'il manque un
     /// ingrédient ou de la place. La pile tenue à la souris est d'abord rangée.
-    pub fn craft(&mut self, recipe: &Recipe) -> bool {
+    pub(crate) fn craft(&mut self, recipe: &Recipe) -> bool {
         self.return_held();
         let mut slots = self.slots.clone();
         for ingredient in &recipe.ingredients {
@@ -349,13 +349,13 @@ impl Inventory {
     }
 
     /// L'inventaire contient tout ce que demande un échange
-    pub fn can_trade(&self, trade: &herocraft_common::Trade) -> bool {
+    pub(crate) fn can_trade(&self, trade: &herocraft_common::Trade) -> bool {
         trade.give.iter().all(|&(item, count)| self.count(item) >= count as u32)
     }
 
     /// Fait un échange avec un habitant : donne ce qu'il demande (le sac d'abord) et range ce qu'il
     /// donne. Renvoie faux, sans rien toucher, s'il manque un objet ou de la place.
-    pub fn trade(&mut self, trade: &herocraft_common::Trade) -> bool {
+    pub(crate) fn trade(&mut self, trade: &herocraft_common::Trade) -> bool {
         self.return_held();
         let mut slots = self.slots.clone();
         for &(item, count) in &trade.give {
@@ -387,19 +387,19 @@ impl Inventory {
     }
 
     /// Fabrique jusqu'à `times` fois. Renvoie le nombre de fois fabriqué.
-    pub fn craft_many(&mut self, recipe: &Recipe, times: u32) -> u32 {
+    pub(crate) fn craft_many(&mut self, recipe: &Recipe, times: u32) -> u32 {
         (0..times).take_while(|_| self.craft(recipe)).count() as u32
     }
 
     /// Pile tenue à la souris dans l'écran d'inventaire
-    pub fn held(&self) -> Option<ItemStack> {
+    pub(crate) fn held(&self) -> Option<ItemStack> {
         self.held.map(|(stack, _)| stack)
     }
 
     /// Clic gauche sur une case de l'écran d'inventaire : prend la pile, la pose dans une case
     /// vide, la fusionne avec une pile du même objet ou l'échange avec la pile qui s'y trouve. Une
     /// case d'équipement refuse ce qui ne s'y porte pas.
-    pub fn click(&mut self, index: usize) {
+    pub(crate) fn click(&mut self, index: usize) {
         if index >= TOTAL_SLOTS {
             return;
         }
@@ -429,7 +429,7 @@ impl Inventory {
     }
 
     /// Clic droit : prend la moitié d'une pile, ou pose un seul exemplaire de la pile tenue
-    pub fn click_secondary(&mut self, index: usize) {
+    pub(crate) fn click_secondary(&mut self, index: usize) {
         if index >= TOTAL_SLOTS || self.held.is_some_and(|(held, _)| !fits(index, held.item)) {
             return;
         }
@@ -460,7 +460,7 @@ impl Inventory {
     /// Maj + clic : enfile ce qui se porte dans sa case d'équipement (une case libre d'abord, sinon
     /// à la place de la pièce portée, qui prend sa place), ou range dans la barre ou le sac ce qui
     /// était porté. Renvoie vrai si quelque chose a bougé.
-    pub fn quick_move(&mut self, index: usize) -> bool {
+    pub(crate) fn quick_move(&mut self, index: usize) -> bool {
         if self.held.is_some() {
             return false;
         }
@@ -481,7 +481,7 @@ impl Inventory {
 
     /// Écran d'inventaire refermé : la pile tenue revient à sa case d'origine, ou à défaut
     /// ailleurs dans l'inventaire
-    pub fn return_held(&mut self) {
+    pub(crate) fn return_held(&mut self) {
         let Some((held, origin)) = self.held.take() else { return };
         let mut remaining = held.count;
         if let Some(stack) = self.slots[origin].as_mut().filter(|s| s.item == held.item) {
@@ -504,12 +504,12 @@ impl Inventory {
 
 /// Bloc gagné en cassant `block`, selon sa fiche (l'herbe donne de la terre, comme dans
 /// Minecraft ; les liquides ne se ramassent pas)
-pub fn drop_for(block: BlockId) -> Option<BlockId> {
+pub(crate) fn drop_for(block: BlockId) -> Option<BlockId> {
     blocks().drop_of(block)
 }
 
 /// Ce qu'une case peut garder : un objet connu, ou un bloc qui se ramasse tel quel
-pub fn can_hold(item: ItemId) -> bool {
+pub(crate) fn can_hold(item: ItemId) -> bool {
     match item.block() {
         Some(block) => drop_for(block) == Some(block),
         None => item.is_known(),
@@ -517,7 +517,7 @@ pub fn can_hold(item: ItemId) -> bool {
 }
 
 /// Teintes du dessus et des côtés d'un bloc (icône, bloc tombé au sol), celles de sa fiche
-pub fn item_colors(block: BlockId) -> ([f32; 4], [f32; 4]) {
+pub(crate) fn item_colors(block: BlockId) -> ([f32; 4], [f32; 4]) {
     match blocks().get(block) {
         Some(sheet) => (sheet.top_color(), sheet.side_color()),
         None => ([0.6, 0.6, 0.6, 1.0], [0.6, 0.6, 0.6, 1.0]),

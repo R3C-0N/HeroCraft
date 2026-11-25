@@ -158,7 +158,7 @@ impl WeatherSample {
     }
 
     /// Il pleut ou il neige
-    pub fn is_wet(&self) -> bool {
+    pub(crate) fn is_wet(&self) -> bool {
         self.precipitation > 0.05
     }
 
@@ -284,7 +284,7 @@ pub struct SkyClock {
 }
 
 /// Nom du fichier de l'horloge dans le dossier de sauvegarde d'un monde
-pub const CLOCK_FILE: &str = "temps.json";
+pub(crate) const CLOCK_FILE: &str = "temps.json";
 
 impl SkyClock {
     /// Horloge enregistrée dans le dossier `dir`, ou celle d'un monde neuf (fichier absent ou illisible)

@@ -14,13 +14,13 @@ use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 
 /// Une face de cube : ses coins (cycliques) et, pour l'occlusion ambiante de chacun, ses deux
 /// voisins de côté et son voisin de coin
-pub struct CubeFace {
+pub(crate) struct CubeFace {
     pub corners: [(u8, u8, u8); 4],
     ao: [[(i32, i32, i32); 3]; 4],
 }
 
 /// Les six faces, dans l'ordre de `FACE_DIRS` (+X, -X, +Y, -Y, +Z, -Z)
-pub const CUBE_FACES: [CubeFace; 6] = [
+pub(crate) const CUBE_FACES: [CubeFace; 6] = [
     CubeFace {
         corners: [(1, 0, 1), (1, 0, 0), (1, 1, 0), (1, 1, 1)],
         ao: [[(1, -1, 0), (1, 0, 1), (1, -1, 1)], [(1, -1, 0), (1, 0, -1), (1, -1, -1)], [(1, 1, 0), (1, 0, -1), (1, 1, -1)], [(1, 1, 0), (1, 0, 1), (1, 1, 1)]],
@@ -90,7 +90,7 @@ pub struct VoxelColumnMesh {
 impl VoxelColumnMesh {
     /// Remplace (ou insère, ou vide) une couche du maillage : les sommets des couches suivantes
     /// glissent, leurs indices sont décalés d'autant
-    pub fn replace_layer(&mut self, layer: i32, part: PlanetMesh) {
+    pub(crate) fn replace_layer(&mut self, layer: i32, part: PlanetMesh) {
         let pos = self.layers.partition_point(|r| r.layer < layer);
         let existing = self.layers.get(pos).filter(|r| r.layer == layer).cloned();
         let (v_range, i_range) = match &existing {
@@ -147,7 +147,7 @@ pub struct VoxelMeshBuilder;
 impl VoxelMeshBuilder {
     /// Construit le maillage de voxels incurvés pour une grille 3x3 de chunks sans murs internes
     #[allow(dead_code)]
-    pub fn build_incurved_grid(
+    pub(crate) fn build_incurved_grid(
         generator: &PlanetWorldGenerator,
         chunk_cache: &mut WorldChunkCache,
         face: PlanetFace,
@@ -387,7 +387,7 @@ impl VoxelMeshBuilder {
 
     /// Construit le maillage d'une colonne verticale complète de chunks voxels (jusqu'à 16-17 chunks, 528+ blocs de haut)
     #[allow(dead_code)]
-    pub fn build_incurved_single_chunk(
+    pub(crate) fn build_incurved_single_chunk(
         generator: &PlanetWorldGenerator,
         _chunk_cache: &mut WorldChunkCache,
         face: PlanetFace,

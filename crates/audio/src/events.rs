@@ -16,7 +16,7 @@ const SILENT_LANDING_SPEED: f32 = 4.0;
 const HARD_LANDING_SPEED: f32 = 25.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PlayerSound {
+pub(crate) enum PlayerSound {
     Step(Material),
     Jump(Material),
     /// Réception, avec sa force dans ]0, 1]
@@ -37,7 +37,7 @@ pub struct PlayerState {
 }
 
 #[derive(Default)]
-pub struct PlayerSoundTracker {
+pub(crate) struct PlayerSoundTracker {
     last: Option<PlayerState>,
     /// Distance parcourue au sol depuis le dernier pas, en blocs
     stride: f32,
