@@ -14,13 +14,13 @@ use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 
 /// Une face de cube : ses coins (cycliques) et, pour l'occlusion ambiante de chacun, ses deux
 /// voisins de côté et son voisin de coin
-pub(crate) struct CubeFace {
-    pub(crate) corners: [(u8, u8, u8); 4],
+pub struct CubeFace {
+    pub corners: [(u8, u8, u8); 4],
     ao: [[(i32, i32, i32); 3]; 4],
 }
 
 /// Les six faces, dans l'ordre de `FACE_DIRS` (+X, -X, +Y, -Y, +Z, -Z)
-pub(crate) const CUBE_FACES: [CubeFace; 6] = [
+pub const CUBE_FACES: [CubeFace; 6] = [
     CubeFace {
         corners: [(1, 0, 1), (1, 0, 0), (1, 1, 0), (1, 1, 1)],
         ao: [[(1, -1, 0), (1, 0, 1), (1, -1, 1)], [(1, -1, 0), (1, 0, -1), (1, -1, -1)], [(1, 1, 0), (1, 0, -1), (1, 1, -1)], [(1, 1, 0), (1, 0, 1), (1, 1, 1)]],
@@ -1081,7 +1081,7 @@ impl VoxelMeshBuilder {
         }
     }
 
-    pub(crate) fn add_quad(
+    pub fn add_quad(
         vertices: &mut Vec<PlanetVertex>,
         indices: &mut Vec<u32>,
         c0: Vec3,
@@ -1143,7 +1143,7 @@ impl VoxelMeshBuilder {
     /// Couleur d'une face, celle de la fiche du bloc
     /// Couleur d'une face (`FACE_DIRS`) qui montre sa matière : la moyenne de sa texture (que le
     /// rendu montre alors telle quelle), sinon la couleur de la fiche
-    pub(crate) fn block_color(block: BlockId, dir: usize) -> [f32; 4] {
+    pub fn block_color(block: BlockId, dir: usize) -> [f32; 4] {
         if let Some(color) = block_textures().face_color(block, dir) {
             return color;
         }
@@ -1381,7 +1381,7 @@ mod tests {
             .take(4)
             .collect();
         for (cx, cy) in chunks {
-            let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, PlanetFace::NegZ, cx, cy, crate::camera::DEFAULT_RADIUS, VisualizationFilter::Standard));
+            let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, PlanetFace::NegZ, cx, cy, (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32, VisualizationFilter::Standard));
             let column = VoxelMeshBuilder::build_column(&generator, &edits, source.clone());
             // La couleur porte l'occlusion ambiante : on compare la teinte, pas la valeur exacte
             cave_vertices += column
