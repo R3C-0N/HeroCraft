@@ -23,7 +23,7 @@ pub fn requested() -> Option<String> {
 
 /// Crée la boucle d'événements. Sous Linux, Wayland ne laisse pas une application placer
 /// sa fenêtre : si un écran est demandé, on passe par X11 (XWayland sous WSLg).
-pub fn build_event_loop(wants_monitor: bool) -> EventLoop<()> {
+pub fn build_event_loop(wants_monitor: bool) -> anyhow::Result<EventLoop<()>> {
     let mut builder = EventLoop::builder();
     #[cfg(target_os = "linux")]
     if wants_monitor {
@@ -32,7 +32,7 @@ pub fn build_event_loop(wants_monitor: bool) -> EventLoop<()> {
     }
     #[cfg(not(target_os = "linux"))]
     let _ = wants_monitor;
-    builder.build().expect("Échec d'initialisation de l'EventLoop Winit")
+    anyhow::Context::context(builder.build(), "Échec d'initialisation de l'EventLoop Winit")
 }
 
 /// Retrouve l'écran correspondant à `wanted` parmi ceux que voit winit.

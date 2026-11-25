@@ -12,20 +12,24 @@ use winit::{
 
 // Maillage du terrain : crate à part, mesurable avec `cargo bench -p herocraft_meshing`
 use herocraft_meshing::{block_light, block_textures, planet_mesh, voxel_mesh};
+// Passes de rendu GPU et réglages graphiques : crate herocraft_render
+use herocraft_render::{
+    atmosphere, block_cracks, block_outline, cloud_mesh, post, precipitation, shaders, shadow, skinned_model, terrain_cull,
+    terrain_pool,
+};
+// Briques de l'interface egui : crate herocraft_ui
+use herocraft_ui::{chat, commands, item_icons, skill_bar, skills_screen, ui_skin, world_map};
+#[cfg(test)]
+use herocraft_ui::ui_snapshot;
+// Son synthétisé : crate herocraft_audio
+use herocraft_audio as audio;
 mod app;
-mod atmosphere;
-mod audio;
 mod benchmark;
-mod block_cracks;
 mod block_interaction;
-mod block_outline;
 mod camera;
-mod chat;
 mod paper_cards;
 mod cinematic;
-mod cloud_mesh;
 mod collision;
-mod commands;
 mod creature_render;
 mod creatures;
 mod dropped_items;
@@ -37,35 +41,20 @@ mod hero_model;
 mod villagers;
 mod input;
 mod inventory;
-mod item_icons;
 mod keyboard_hook;
 mod lod;
 mod monitor;
 mod network;
 mod player_stats;
-mod post;
-mod precipitation;
 mod renderer;
-mod shaders;
-mod shadow;
-mod skills_screen;
-mod skinned_model;
 mod skill_models;
-mod skill_bar;
 mod skill_play;
-mod terrain_cull;
-mod terrain_pool;
-mod threads;
 mod ui;
-mod ui_skin;
-#[cfg(test)]
-mod ui_snapshot;
 mod vision_assault;
 mod vision_charge;
 mod vision_tutorial;
 mod void_stones;
 mod weather;
-mod world_map;
 
 use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
@@ -82,7 +71,7 @@ use ui::{MenuPage, NetStatus, UiAction, UiState};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     // Variables du fichier `.env` (sans écraser celles déjà définies dans l'environnement)
     let _ = dotenvy::dotenv();
     // Niveau `info` par défaut, `RUST_LOG` (ou le `.env`) le remplace s'il est défini
@@ -115,9 +104,9 @@ fn main() {
     info!("==========================================================");
 
     let wanted_monitor = monitor::requested();
-    let event_loop = monitor::build_event_loop(wanted_monitor.is_some());
+    let event_loop = monitor::build_event_loop(wanted_monitor.is_some())?;
     // La fenêtre s'ouvre et la partie se prépare à la reprise de l'application (`resumed`)
-    app::run(event_loop, wanted_monitor);
+    app::run(event_loop, wanted_monitor)
 }
 
 /// Ouvre la fenêtre du jeu, sur l'écran `wanted_monitor` s'il est demandé (`HEROCRAFT_MONITOR`)

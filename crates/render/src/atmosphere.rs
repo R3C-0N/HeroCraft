@@ -8,7 +8,7 @@
 
 use wgpu::util::DeviceExt;
 
-use crate::ui::{AtmosphereSettings, LightingSettings};
+use crate::settings::{AtmosphereSettings, LightingSettings};
 
 const LUT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const TRANSMITTANCE_SIZE: (u32, u32) = (256, 64);
@@ -720,6 +720,9 @@ impl Atmosphere {
 mod tests {
     use super::*;
 
+    /// Rayon de la planète par défaut (camera.rs du client, `DEFAULT_RADIUS`)
+    const DEFAULT_RADIUS: f32 = (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32;
+
     #[test]
     fn test_atmosphere_uniform_layout() {
         // 8 vec4 : doit correspondre à Atmosphere dans atmosphere.wgsl
@@ -730,7 +733,7 @@ mod tests {
     fn test_atmosphere_scales_with_planet_and_whitens_noon_sun() {
         let settings = AtmosphereSettings::default();
         let lighting = LightingSettings::default();
-        let r = crate::camera::DEFAULT_RADIUS;
+        let r = DEFAULT_RADIUS;
         let small = AtmosphereUniform::new(r, &settings, &lighting, true);
         let big = AtmosphereUniform::new(2.0 * r, &settings, &lighting, true);
         // Le bas de l'atmosphère est au niveau de la mer (100 blocs au-dessus du rayon de base)
@@ -744,9 +747,9 @@ mod tests {
         // L'éclairement hors atmosphère compense le bleu absorbé au zénith : plus fort en bleu
         assert!(small.sun_illuminance[2] > small.sun_illuminance[0]);
         // Les tables ne dépendent ni du soleil ni des rayons
-        let brighter = AtmosphereUniform::new(crate::camera::DEFAULT_RADIUS, &settings, &LightingSettings { sun_intensity: 2.0, day_ambient: 1.5, ..lighting }, false);
+        let brighter = AtmosphereUniform::new(DEFAULT_RADIUS, &settings, &LightingSettings { sun_intensity: 2.0, day_ambient: 1.5, ..lighting }, false);
         assert_eq!(small.lut_key(), brighter.lut_key());
-        let hazier = AtmosphereUniform::new(crate::camera::DEFAULT_RADIUS, &settings, &LightingSettings { fog_intensity: 2.0, ..lighting }, true);
+        let hazier = AtmosphereUniform::new(DEFAULT_RADIUS, &settings, &LightingSettings { fog_intensity: 2.0, ..lighting }, true);
         assert_ne!(small.lut_key(), hazier.lut_key());
     }
 }

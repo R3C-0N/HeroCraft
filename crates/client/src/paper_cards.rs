@@ -446,7 +446,7 @@ impl CardRenderer {
             if !ready && self.loaded.as_deref() != Some(next.key.as_str()) {
                 let images = next.images.clone();
                 let handle = std::thread::spawn(move || {
-                    crate::threads::lower_current_thread_priority();
+                    herocraft_common::threads::lower_current_thread_priority();
                     CardImages::load(&CardImages::default_dir(), images.iter().map(String::as_str))
                 });
                 self.pending = Some((next.key.clone(), handle));

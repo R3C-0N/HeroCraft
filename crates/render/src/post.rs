@@ -4,7 +4,7 @@
 
 use wgpu::util::DeviceExt;
 
-use crate::ui::PostSettings;
+use crate::settings::PostSettings;
 
 /// Format HDR complet : niveaux du bloom, rayons crépusculaires, et passe 3D avec MSAA
 pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;

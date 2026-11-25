@@ -1,0 +1,22 @@
+[package]
+name = "herocraft_audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Son du jeu : bruitages et ambiance synthétisés, mixés et joués par rodio
+[dependencies]
+herocraft_common = { path = "../common" }
+glam = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+# Son : mixage et sortie audio (les sons sont synthétisés par le jeu, aucun décodeur requis)
+rodio = { version = "0.23", default-features = false, features = ["playback"] }
+
+# Son sous Linux : PulseAudio (et PipeWire) d'abord, ALSA en secours. WSLg n'expose que PulseAudio.
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18", features = ["pulseaudio"] }
+
+[lints]
+workspace = true

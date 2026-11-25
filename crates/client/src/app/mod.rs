@@ -393,9 +393,9 @@ impl ApplicationHandler for Launcher {
 
 /// Fait tourner la boucle d'événements de winit jusqu'à la fermeture du jeu : la fenêtre s'ouvre
 /// (sur l'écran `wanted_monitor` s'il est demandé) et la partie se prépare au démarrage
-pub(crate) fn run(event_loop: EventLoop<()>, wanted_monitor: Option<String>) {
+pub(crate) fn run(event_loop: EventLoop<()>, wanted_monitor: Option<String>) -> anyhow::Result<()> {
     // Le jeu dessine en continu
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut launcher = Launcher { wanted_monitor, app: None };
-    event_loop.run_app(&mut launcher).expect("Erreur dans la boucle d'événements");
+    anyhow::Context::context(event_loop.run_app(&mut launcher), "Erreur dans la boucle d'événements")
 }

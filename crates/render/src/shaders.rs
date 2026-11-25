@@ -15,6 +15,9 @@ const MODULES: [(&str, &str); 3] = [
     (include_str!("shadow_common.wgsl"), "shadow_common.wgsl"),
 ];
 
+/// Shader des nuages 3D, partagé par le rendu des nuages (renderer.rs du client) et leurs ombres
+pub const CLOUD_SHADER: &str = include_str!("cloud_shader.wgsl");
+
 /// Modules déjà assemblés, par fichier : l'assemblage par naga_oil coûte des dizaines de
 /// millisecondes, et les pipelines sont recréés quand la cible de la passe 3D change (MSAA)
 static COMPOSED: OnceLock<Mutex<HashMap<(String, usize), naga::Module>>> = OnceLock::new();
@@ -101,5 +104,31 @@ pub fn save_pipeline_cache() {
     let written = std::fs::create_dir_all(CACHE_DIR).and_then(|_| std::fs::write(&temp, &data)).and_then(|_| std::fs::rename(&temp, path));
     if let Err(e) = written {
         log::warn!("Cache des pipelines non enregistré ({}) : {e}", path.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Les shaders de cette crate s'assemblent (imports naga_oil) et passent la validation de naga
+    #[test]
+    fn test_shaders_wgsl_validation() {
+        for (name, source) in [
+            ("cloud_shader.wgsl", super::CLOUD_SHADER),
+            ("post_shader.wgsl", include_str!("post_shader.wgsl")),
+            ("shadow_caster.wgsl", include_str!("shadow_caster.wgsl")),
+            ("atmosphere_lut.wgsl", include_str!("atmosphere_lut.wgsl")),
+            ("god_rays.wgsl", include_str!("god_rays.wgsl")),
+            ("block_outline.wgsl", include_str!("block_outline.wgsl")),
+            ("block_cracks.wgsl", include_str!("block_cracks.wgsl")),
+            ("precipitation.wgsl", include_str!("precipitation.wgsl")),
+        ] {
+            let module = if matches!(name, "post_shader.wgsl" | "shadow_caster.wgsl") {
+                naga::front::wgsl::parse_str(source).unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"))
+            } else {
+                super::compose(source, name).unwrap_or_else(|e| panic!("Failed to compose {name}:\n{e}"))
+            };
+            let mut validator = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all());
+            validator.validate(&module).unwrap_or_else(|e| panic!("Failed to validate {name}:\n{e}"));
+        }
     }
 }

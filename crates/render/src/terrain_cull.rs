@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_flattening_pushes_horizon_back() {
-        let k = crate::renderer::planet_flattening(R + 2.0 * BLOCK, R, 1.0);
+        let k = crate::flattening::planet_flattening(R + 2.0 * BLOCK, R, 1.0);
         assert!(k > 2.0);
         let flatten = [(k - 1.0) * R, k, 6.0 * BLOCK, 22.0 * BLOCK];
         let flat = ground_view(flatten);
