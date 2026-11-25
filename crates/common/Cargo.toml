@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 glam = { workspace = true }
 serde = { workspace = true }
-bincode = { workspace = true }
+postcard = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 # Sinus de fdlibm : le bruit du peintre de héros, au bit près celui de la maquette
