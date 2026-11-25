@@ -1,0 +1,42 @@
+name: Rust
+
+on:
+  push:
+    branches: [rust]
+  pull_request:
+    branches: [rust]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pas de compilation incrémentale en CI : le cache reste plus petit
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # `cargo fmt --check` sera ajouté avec le formatage global du dépôt
+  clippy-et-tests:
+    name: Clippy et tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dépendances système (ALSA, udev)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+      # La version de Rust vient de rust-toolchain.toml
+      - name: Installer Rust
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        # Les erreurs font échouer la CI ; les avertissements seront traités par la configuration des lints
+        run: cargo clippy --workspace --all-targets --locked
+      - name: Tests
+        run: cargo test --workspace --locked
+
+  cargo-deny:
+    name: Licences et failles connues (cargo deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
