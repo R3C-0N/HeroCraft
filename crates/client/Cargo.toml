@@ -13,6 +13,7 @@ herocraft_common = { path = "../common" }
 herocraft_voxel_engine = { path = "../voxel_engine" }
 herocraft_world = { path = "../world" }
 herocraft_server = { path = "../server" }
+herocraft_meshing = { path = "../meshing" }
 glam = { workspace = true }
 mimalloc = { workspace = true }
 serde = { workspace = true }
