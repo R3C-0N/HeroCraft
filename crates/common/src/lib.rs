@@ -14,6 +14,7 @@ pub mod net;
 pub mod profiler;
 pub mod protocol;
 pub mod skills;
+pub mod threads;
 pub mod villager;
 pub mod vision;
 pub mod void_stones;

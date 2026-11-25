@@ -190,6 +190,8 @@ pub struct Audio {
 
 impl Audio {
     /// Ouvre la carte son par défaut et prépare les sons. En cas d'échec, le jeu reste muet.
+    /// Pas de `Default` : ouvrir la carte son n'est pas une valeur par défaut anodine.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let output = match DeviceSinkBuilder::open_default_sink() {
             Ok(mut device) => {
@@ -434,7 +436,7 @@ mod tests {
     }
 
     /// Joue chaque son sur la sortie audio, pour les écouter :
-    /// `cargo test -p herocraft_client ecouter_les_sons -- --ignored --nocapture`
+    /// `cargo test -p herocraft_audio ecouter_les_sons -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn ecouter_les_sons() {
@@ -471,7 +473,7 @@ mod tests {
     }
 
     /// Écrit chaque son en WAV dans `target/sons/` :
-    /// `cargo test -p herocraft_client exporter_les_sons -- --ignored`
+    /// `cargo test -p herocraft_audio exporter_les_sons -- --ignored`
     #[test]
     #[ignore]
     fn exporter_les_sons() {

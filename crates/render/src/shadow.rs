@@ -5,7 +5,7 @@
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
-use crate::ui::ShadowSettings;
+use crate::settings::ShadowSettings;
 
 pub const CASCADE_COUNT: usize = 3;
 /// Côté des cascades : ombres fines, ombres allégées (`ShadowSettings::fine`)

@@ -1264,21 +1264,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 
 [[package]]
+name = "herocraft_audio"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "glam",
+ "herocraft_common",
+ "log",
+ "rodio",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "herocraft_client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
  "bytemuck",
- "cpal",
  "dotenvy",
  "egui",
  "egui-wgpu",
  "env_logger",
  "glam",
+ "herocraft_audio",
  "herocraft_common",
  "herocraft_meshing",
+ "herocraft_render",
  "herocraft_server",
+ "herocraft_ui",
  "herocraft_voxel_engine",
  "herocraft_world",
  "log",
@@ -1288,11 +1303,9 @@ dependencies = [
  "png",
  "pollster",
  "rayon",
- "rodio",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "thread-priority",
  "wgpu",
  "windows-sys 0.48.0",
  "winit",
@@ -1310,6 +1323,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "thread-priority",
  "tracy-client",
 ]
 
@@ -1329,6 +1343,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "herocraft_render"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bytemuck",
+ "glam",
+ "herocraft_common",
+ "herocraft_meshing",
+ "herocraft_world",
+ "log",
+ "naga",
+ "naga_oil",
+ "pollster",
+ "serde",
+ "serde_json",
+ "wgpu",
+]
+
+[[package]]
 name = "herocraft_server"
 version = "0.1.0"
 dependencies = [
@@ -1342,6 +1376,22 @@ dependencies = [
  "mimalloc",
  "serde",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "herocraft_ui"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "glam",
+ "herocraft_common",
+ "herocraft_render",
+ "herocraft_world",
+ "log",
+ "png",
+ "rayon",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

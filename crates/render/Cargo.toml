@@ -1,0 +1,28 @@
+[package]
+name = "herocraft_render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Passes de rendu GPU (wgpu) et réglages graphiques, sans fenêtre ni état du jeu
+[dependencies]
+herocraft_common = { path = "../common" }
+herocraft_world = { path = "../world" }
+herocraft_meshing = { path = "../meshing" }
+glam = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+anyhow = { workspace = true }
+wgpu = { version = "30", features = ["naga-ir"] }
+bytemuck = { version = "1.18", features = ["derive"] }
+naga = "30"
+naga_oil = { version = "0.23", default-features = false }
+base64 = "0.22"
+
+[dev-dependencies]
+naga = { version = "30", features = ["wgsl-in"] }
+pollster = "0.3"
+
+[lints]
+workspace = true

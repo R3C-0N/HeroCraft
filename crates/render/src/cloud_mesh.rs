@@ -492,7 +492,7 @@ mod tests {
         assert!(blocks_per_s > 0.5 && blocks_per_s < 3.0, "Vent à {blocks_per_s} blocs/s");
 
         // Les copies du shader suivent les constantes
-        let shader = include_str!("cloud_shader.wgsl");
+        let shader = crate::shaders::CLOUD_SHADER;
         let wgsl_const = |name: &str| -> f32 {
             let line = shader.lines().find(|l| l.starts_with(&format!("const {name}: f32 = "))).expect(name);
             line.trim_end_matches(';').rsplit(' ').next().unwrap().parse().unwrap()

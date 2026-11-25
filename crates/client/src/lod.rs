@@ -161,7 +161,7 @@ impl PlanetLodManager {
         let thread_pool = rayon::ThreadPoolBuilder::new()
             .num_threads((num_cpus - 1).clamp(1, 8))
             .thread_name(|idx| format!("herocraft-worker-{}", idx))
-            .start_handler(|_| crate::threads::lower_current_thread_priority())
+            .start_handler(|_| herocraft_common::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de workers Rayon");
 
@@ -169,14 +169,14 @@ impl PlanetLodManager {
         let patch_pool = rayon::ThreadPoolBuilder::new()
             .num_threads((num_cpus / 3).clamp(2, 4))
             .thread_name(|idx| format!("herocraft-patch-{}", idx))
-            .start_handler(|_| crate::threads::lower_current_thread_priority())
+            .start_handler(|_| herocraft_common::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de patchs Rayon");
         let (patch_tx, patch_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
         let detail_pool = rayon::ThreadPoolBuilder::new()
             .num_threads((num_cpus / 2).clamp(1, 4))
             .thread_name(|idx| format!("herocraft-detail-{}", idx))
-            .start_handler(|_| crate::threads::lower_current_thread_priority())
+            .start_handler(|_| herocraft_common::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de patchs détaillés Rayon");
 

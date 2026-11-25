@@ -13,6 +13,8 @@ log = { workspace = true }
 thiserror = { workspace = true }
 # Sinus de fdlibm : le bruit du peintre de héros, au bit près celui de la maquette
 libm = "0.2"
+# Priorité basse des fils de travail (`threads`)
+thread-priority = "3"
 # Profileur Tracy (feature `tracy`) : l'interface doit être de la version que donne le tableau du README de
 # tracy-client pour cette version
 tracy-client = { version = "0.18", optional = true }

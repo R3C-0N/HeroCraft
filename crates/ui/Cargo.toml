@@ -1,0 +1,25 @@
+[package]
+name = "herocraft_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Briques de l'interface egui (habillage, chat, carte, compétences, icônes)
+[dependencies]
+herocraft_common = { path = "../common" }
+herocraft_world = { path = "../world" }
+herocraft_render = { path = "../render" }
+glam = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+egui = { version = "0.37", features = ["default_fonts", "monochrome_emoji_fonts"] }
+rayon = "1.10"
+png = "0.17"
+
+[features]
+# Captures de l'interface sans carte graphique (`ui_snapshot`), pour les tests du client
+snapshot = []
+
+[lints]
+workspace = true
