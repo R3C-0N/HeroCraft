@@ -71,6 +71,22 @@ herocraft_common::prof_value!("lod.feuilles", leaves.len());
 Éviter d'instrumenter les fonctions de quelques dizaines de nanosecondes (bruit, `fbm_3d`) :
 le coût de la mesure dominerait.
 
+## Bancs d'essai sans fenêtre (criterion)
+
+Le maillage des chunks (crate `herocraft_meshing`) et la génération du terrain (`herocraft_world`)
+se mesurent sans lancer le jeu, toujours sur la même colonne de chunks (graine 2026, face +Z,
+chunk 10, 12) :
+
+```
+cargo bench -p herocraft_meshing   # échantillonnage, colonne complète, remaillage, chunk LOD
+cargo bench -p herocraft_world     # générateur, colonnes, chunk de surface, souterrain, complet
+```
+
+criterion compare chaque lancement au précédent et dit si l'écart est significatif. Pour comparer
+deux branches : `cargo bench -p herocraft_world -- --save-baseline avant` sur la première, puis
+`cargo bench -p herocraft_world -- --baseline avant` sur la seconde. Les résultats sont dans
+`target/criterion/`.
+
 ## Tracy (profileur en direct)
 
 Avec la feature `tracy`, les mêmes portées (`prof_scope!`), valeurs (`prof_value!`) et images

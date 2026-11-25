@@ -1,0 +1,25 @@
+[package]
+name = "herocraft_meshing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+herocraft_common = { path = "../common" }
+herocraft_voxel_engine = { path = "../voxel_engine" }
+herocraft_world = { path = "../world" }
+glam = { workspace = true }
+log = { workspace = true }
+wgpu = { version = "30", features = ["naga-ir"] }
+bytemuck = { version = "1.18", features = ["derive"] }
+png = "0.17"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "meshing"
+harness = false
+
+[lints]
+workspace = true
