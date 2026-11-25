@@ -1,10 +1,11 @@
 name: Rust
 
+# La CI est longue (environ 15 minutes) : elle tourne seulement sur `rust`, après chaque fusion,
+# et à la demande depuis l'onglet Actions (« Run workflow »), pas sur chaque PR
 on:
   push:
     branches: [rust]
-  pull_request:
-    branches: [rust]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
