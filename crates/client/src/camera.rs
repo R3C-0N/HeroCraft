@@ -343,7 +343,7 @@ impl OrbitCamera {
         let found = herocraft_common::PlanetFace::ALL.into_iter().flat_map(|face| {
             (0..CELLS_PER_FACE * CELLS_PER_FACE).filter_map(move |i| generator.structures.cell(generator, face, i % CELLS_PER_FACE, i / CELLS_PER_FACE))
         });
-        let mut found = found.filter(|s| culture.is_none() || s.culture == culture);
+        let found = found.filter(|s| culture.is_none() || s.culture == culture);
         // `temple` : les ruines qui gardent un temple (celui d'une ville-souvenir)
         let temple = wanted.as_str() == "temple";
         let has_temple = |s: &herocraft_world::structures::Settlement| s.pieces.iter().any(|p| matches!(p, herocraft_world::structures::Piece::Temple(_)));

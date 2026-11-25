@@ -653,16 +653,16 @@ impl Shadows {
                 if let Some(Some(draws)) = terrain.get(i) {
                     pool.draw(&mut render_pass, draws, false);
                 }
-                for caster in moving.filter(|_| i == 0) {
+                if let Some(caster) = moving.filter(|_| i == 0) {
                     // Test dans le plan de la lumière : la profondeur couvre déjà tout le volume
                     let d = caster.center - pass.center;
                     let reach = pass.extent + caster.radius;
-                    if d.dot(right).abs() > reach || d.dot(up).abs() > reach {
-                        continue;
+                    let visible = d.dot(right).abs() <= reach && d.dot(up).abs() <= reach;
+                    if visible {
+                        render_pass.set_vertex_buffer(0, caster.positions.slice(..));
+                        render_pass.set_index_buffer(caster.indices.slice(..), caster.index_format);
+                        render_pass.draw_indexed(0..caster.num_indices, 0, 0..1);
                     }
-                    render_pass.set_vertex_buffer(0, caster.positions.slice(..));
-                    render_pass.set_index_buffer(caster.indices.slice(..), caster.index_format);
-                    render_pass.draw_indexed(0..caster.num_indices, 0, 0..1);
                 }
             }
         }
