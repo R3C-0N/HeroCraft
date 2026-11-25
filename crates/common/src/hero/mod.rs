@@ -118,24 +118,24 @@ impl Appearance {
     ///
     /// Renvoie la raison du refus, en français pour le joueur ; acceptée, l'apparence est
     /// normalisée sur place (nom rogné, traits imposés appliqués).
-    pub fn verify(&mut self) -> Result<(), String> {
+    pub fn verify(&mut self) -> Result<(), LegendError> {
         let a = atlas();
         self.nom = self.nom.trim().to_string();
         if self.nom.is_empty() {
-            return Err("le héros n'a pas de nom".into());
+            return Err(LegendError::NoName);
         }
         if self.nom.chars().count() > NAME_MAX || self.nom.chars().any(char::is_control) {
-            return Err("ce nom ne peut pas se porter".into());
+            return Err(LegendError::BadName);
         }
-        let Some(sp) = a.ESPECES.get(&self.espece) else { return Err("espèce inconnue".into()) };
+        let Some(sp) = a.ESPECES.get(&self.espece) else { return Err(LegendError::UnknownSpecies) };
         if self.variante < 0 || self.variante as usize >= sp.variantes.len() {
-            return Err("variante inconnue".into());
+            return Err(LegendError::UnknownVariant);
         }
         if !(self.taille >= sp.min - 1e-6 && self.taille <= sp.max + 1e-6) {
-            return Err("taille hors de l'espèce".into());
+            return Err(LegendError::Height);
         }
         if !(0.0..=1.0).contains(&self.corpulence) {
-            return Err("corpulence hors d'échelle".into());
+            return Err(LegendError::Build);
         }
         let traits = a.traits_de(self);
         if let Some(c) = traits.coiffure_forcee.filter(|c| !c.is_empty()) {
@@ -144,11 +144,11 @@ impl Appearance {
         if let Some(b) = traits.barbe_forcee.filter(|b| !b.is_empty()) {
             self.barbe = b;
         }
-        fn dans(valeur: &str, permis: impl IntoIterator<Item = impl AsRef<str>>, quoi: &str) -> Result<(), String> {
+        fn dans(valeur: &str, permis: impl IntoIterator<Item = impl AsRef<str>>, quoi: &'static str) -> Result<(), LegendError> {
             if permis.into_iter().any(|p| p.as_ref() == valeur) {
                 Ok(())
             } else {
-                Err(format!("choix inconnu : {quoi}"))
+                Err(LegendError::UnknownChoice(quoi))
             }
         }
         use atlas::Choix;
@@ -187,6 +187,28 @@ impl Appearance {
     }
 }
 
+/// Pourquoi le baptême refuse une légende, en français pour le joueur
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum LegendError {
+    #[error("le héros n'a pas de nom")]
+    NoName,
+    #[error("ce nom ne peut pas se porter")]
+    BadName,
+    #[error("espèce inconnue")]
+    UnknownSpecies,
+    #[error("variante inconnue")]
+    UnknownVariant,
+    #[error("taille hors de l'espèce")]
+    Height,
+    #[error("corpulence hors d'échelle")]
+    Build,
+    /// Option absente de la forge (le nom du champ en paramètre)
+    #[error("choix inconnu : {0}")]
+    UnknownChoice(&'static str),
+    #[error("voie inconnue")]
+    UnknownClass,
+}
+
 /// La légende d'un héros baptisé : son apparence (nom compris) et sa voie
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Legend {
@@ -197,10 +219,10 @@ pub struct Legend {
 impl Legend {
     /// Vérifie toute la légende (voir [`Appearance::verify`]) et une voie du râtelier. Acceptée,
     /// elle est normalisée sur place.
-    pub fn verify(&mut self) -> Result<(), String> {
+    pub fn verify(&mut self) -> Result<(), LegendError> {
         self.appearance.verify()?;
         if class_sheet(self.class).is_none() {
-            return Err("voie inconnue".into());
+            return Err(LegendError::UnknownClass);
         }
         Ok(())
     }
@@ -278,13 +300,13 @@ mod tests {
         assert!(l.verify().is_err());
         let mut l = legende();
         l.appearance.taille = 1.9;
-        assert_eq!(l.verify(), Err("taille hors de l'espèce".into()));
+        assert_eq!(l.verify(), Err(LegendError::Height));
         let mut l = legende();
         l.appearance.peau = "#123456".into();
-        assert_eq!(l.verify(), Err("choix inconnu : couleur de peau".into()));
+        assert_eq!(l.verify(), Err(LegendError::UnknownChoice("couleur de peau")));
         let mut l = legende();
         l.class = PlayerClass::Adventurer;
-        assert_eq!(l.verify(), Err("voie inconnue".into()));
+        assert_eq!(l.verify(), Err(LegendError::UnknownClass));
     }
 
     #[test]

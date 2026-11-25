@@ -1516,6 +1516,8 @@ impl Villages {
             (d < CHAT_RADIUS_BLOCKS).then_some((j, pos, d))
         }).min_by(|a, b| a.2.total_cmp(&b.2));
         let Some((j, pos, _)) = partner else { return false };
+        // Le voisin retenu a forcément une créature : sa position vient d'elle
+        let Some(pid) = self.people[j].creature else { return false };
         let Some((_, there)) = Self::cell_of(world, pos) else { return false };
         // Il s'arrête à côté de lui, du côté d'où il vient
         let (dx, dz) = ((here.0 - there.0).signum(), (here.1 - there.1).signum());
@@ -1526,7 +1528,6 @@ impl Villages {
         }
         self.people[i].partner = Some(j);
         // Il l'attend en le regardant venir
-        let pid = self.people[j].creature.unwrap();
         let species = self.people[j].species;
         self.set_pause(world, pid, species, None, Some(me));
         let other = &mut self.people[j];

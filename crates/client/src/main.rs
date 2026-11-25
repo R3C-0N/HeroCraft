@@ -1749,8 +1749,8 @@ fn main() {
                                             hosted = Some(host);
                                         }
                                         Err(e) => {
-                                            warn!("{}", e);
-                                            ui_state.multiplayer.notice = Some(e);
+                                            warn!("{e:#}");
+                                            ui_state.multiplayer.notice = Some(format!("{e:#}"));
                                         }
                                     }
                                 }
@@ -3012,7 +3012,7 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
             Ok(vec![format!("Cinematics: {}", ids.join(", "))])
         }
         Command::Cinematic(Some(id)) => {
-            game.cinematics.player.play(&id)?;
+            game.cinematics.player.play(&id).map_err(|e| e.to_string())?;
             Ok(Vec::new())
         }
         Command::Event(text) => {

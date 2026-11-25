@@ -152,24 +152,43 @@ fn max_stack() -> u16 {
     BLOCK_STACK
 }
 
+/// Fiche d'objet impossible à lire ou qui ne tient pas debout
+#[derive(Debug, thiserror::Error)]
+pub enum ItemSheetError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("numéro {0} invalide (à partir de {FIRST_OBJECT_ID} : en dessous, ce sont les blocs)")]
+    NumericId(u16),
+    #[error("taille de pile invalide (de 1 à 999)")]
+    MaxStack,
+    #[error("un objet qui se porte (`slot`) ne s'empile pas : `max_stack` doit valoir 1")]
+    WornStacks,
+    #[error("une arme (`weapon`) ne s'empile pas et n'est pas une munition")]
+    WeaponStacks,
+    #[error(transparent)]
+    Weapon(#[from] crate::weapons::WeaponError),
+}
+
 impl ItemSheet {
     /// Lit la fiche JSON d'un objet et vérifie qu'elle tient debout
-    pub fn parse(id: &str, json: &str) -> Result<Self, String> {
-        let mut sheet: ItemSheet = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    pub fn parse(id: &str, json: &str) -> Result<Self, ItemSheetError> {
+        let mut sheet: ItemSheet = serde_json::from_str(json)?;
         sheet.id = id.to_string();
         if sheet.numeric_id < FIRST_OBJECT_ID {
-            return Err(format!("numéro {} invalide (à partir de {FIRST_OBJECT_ID} : en dessous, ce sont les blocs)", sheet.numeric_id));
+            return Err(ItemSheetError::NumericId(sheet.numeric_id));
         }
         if !(1..=999).contains(&sheet.max_stack) {
-            return Err("taille de pile invalide (de 1 à 999)".into());
+            return Err(ItemSheetError::MaxStack);
         }
         if sheet.slot.is_some() && sheet.max_stack != 1 {
-            return Err("un objet qui se porte (`slot`) ne s'empile pas : `max_stack` doit valoir 1".into());
+            return Err(ItemSheetError::WornStacks);
         }
         if let Some(weapon) = &sheet.weapon {
             weapon.check()?;
             if sheet.max_stack != 1 || sheet.ammo.is_some() {
-                return Err("une arme (`weapon`) ne s'empile pas et n'est pas une munition".into());
+                return Err(ItemSheetError::WeaponStacks);
             }
         }
         Ok(sheet)
@@ -235,7 +254,7 @@ impl ItemRegistry {
                 continue;
             }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            let result = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|text| ItemSheet::parse(&id, &text));
+            let result = std::fs::read_to_string(&path).map_err(ItemSheetError::from).and_then(|text| ItemSheet::parse(&id, &text));
             match result {
                 Ok(sheet) => sheets.push(sheet),
                 Err(e) => errors.push(format!("Objet {} ignoré : {e}", path.display())),
@@ -343,13 +362,13 @@ mod tests {
         let ok = r#"{ "numeric_id": 20000, "name": "Caillou", "icon": "caillou.png" }"#;
         let pebble = ItemSheet::parse("caillou", ok).unwrap();
         assert_eq!(pebble.max_stack, BLOCK_STACK);
-        assert!(ItemSheet::parse("caillou", &ok.replace("20000", "12")).unwrap_err().contains("blocs"));
-        assert!(ItemSheet::parse("caillou", &ok.replace("icon", "icone")).unwrap_err().contains("icone"));
+        assert!(ItemSheet::parse("caillou", &ok.replace("20000", "12")).unwrap_err().to_string().contains("blocs"));
+        assert!(ItemSheet::parse("caillou", &ok.replace("icon", "icone")).unwrap_err().to_string().contains("icone"));
         let empty = ok.replace(r#""icon""#, r#""max_stack": 0, "icon""#);
-        assert!(ItemSheet::parse("caillou", &empty).is_err());
+        assert!(matches!(ItemSheet::parse("caillou", &empty), Err(ItemSheetError::MaxStack)));
         let ring = ok.replace(r#""icon""#, r#""slot": "ring", "max_stack": 1, "icon""#);
         assert_eq!(ItemSheet::parse("anneau", &ring).unwrap().slot, Some(EquipSlot::Ring));
-        assert!(ItemSheet::parse("anneau", &ring.replace(r#""max_stack": 1"#, r#""max_stack": 4"#)).unwrap_err().contains("max_stack"));
+        assert!(ItemSheet::parse("anneau", &ring.replace(r#""max_stack": 1"#, r#""max_stack": 4"#)).unwrap_err().to_string().contains("max_stack"));
         assert!(ItemSheet::parse("anneau", &ring.replace("ring", "doigt")).is_err());
     }
 }

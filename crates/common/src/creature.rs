@@ -812,7 +812,7 @@ impl CreatureRegistry {
                 continue;
             }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            let result = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|text| CreatureSpecies::parse(&id, &text));
+            let result = std::fs::read_to_string(&path).map_err(CreatureError::from).and_then(|text| CreatureSpecies::parse(&id, &text));
             match result {
                 Ok(species) => registry.species.push(species),
                 Err(e) => errors.push(format!("Créature {} ignorée : {e}", path.display())),
@@ -854,56 +854,89 @@ impl CreatureRegistry {
     }
 }
 
+/// Description d'espèce impossible à lire ou qui ne tient pas debout
+#[derive(Debug, thiserror::Error)]
+pub enum CreatureError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("corps, vitesse ou vie invalides (valeurs positives attendues)")]
+    Body,
+    #[error("modèle manquant (`model.mesh` et `model.texture`)")]
+    MissingModel,
+    #[error("taille de groupe invalide (1 ≤ min_group ≤ max_group)")]
+    GroupSize,
+    #[error("apparition invalide (poids positif, chance entre 0 et 1)")]
+    Spawn,
+    #[error("attaque invalide (dégâts, délai, vue et allure positifs, meute d'au moins 1)")]
+    Attack,
+    #[error("élevage invalide (au moins une nourriture, chance d'apprivoiser entre 0 et 1, croissance positive)")]
+    Breeding,
+    #[error("ponte invalide (0 < minutes min ≤ minutes max)")]
+    Laying,
+    #[error("animation {0} : cycle et foulée doivent être positifs")]
+    AnimationCycle(String),
+    #[error("animation {0} : pause invalide (poids positif, 0 < durée min ≤ durée max)")]
+    AnimationPause(String),
+    #[error("animation {0} : valeur d'os invalide")]
+    AnimationBone(String),
+    #[error("trop d'inactivités")]
+    TooManyPauses,
+    #[error(transparent)]
+    Loot(#[from] crate::loot::LootError),
+}
+
 impl CreatureSpecies {
     /// Lit la description JSON d'une espèce et vérifie qu'elle tient debout
-    pub fn parse(id: &str, json: &str) -> Result<Self, String> {
-        let mut species: CreatureSpecies = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    pub fn parse(id: &str, json: &str) -> Result<Self, CreatureError> {
+        let mut species: CreatureSpecies = serde_json::from_str(json)?;
         species.id = id.to_string();
         let body = species.body;
         if !(body.half_width > 0.0 && body.half_length > 0.0 && body.height > 0.0 && species.walk_speed >= 0.0 && species.health > 0.0) {
-            return Err("corps, vitesse ou vie invalides (valeurs positives attendues)".into());
+            return Err(CreatureError::Body);
         }
         if !species.humanoid && (species.model.mesh.is_empty() || species.model.texture.is_empty()) {
-            return Err("modèle manquant (`model.mesh` et `model.texture`)".into());
+            return Err(CreatureError::MissingModel);
         }
         if species.min_group == 0 || species.max_group < species.min_group {
-            return Err("taille de groupe invalide (1 ≤ min_group ≤ max_group)".into());
+            return Err(CreatureError::GroupSize);
         }
         if species.spawn.iter().any(|rule| !(rule.weight >= 0.0 && (0.0..=1.0).contains(&rule.chance))) {
-            return Err("apparition invalide (poids positif, chance entre 0 et 1)".into());
+            return Err(CreatureError::Spawn);
         }
         if let Some(a) = &species.attack {
             if !(a.damage > 0.0 && a.cooldown > 0.0 && a.sight > 0.0 && a.reach >= 0.0 && a.chase_speed > 0.0 && a.pack_size >= 1) {
-                return Err("attaque invalide (dégâts, délai, vue et allure positifs, meute d'au moins 1)".into());
+                return Err(CreatureError::Attack);
             }
         }
         if let Some(b) = &species.breeding {
             if b.food.is_empty() || !(b.taming_chance > 0.0 && b.taming_chance <= 1.0) || !(b.growth_minutes > 0.0) {
-                return Err("élevage invalide (au moins une nourriture, chance d'apprivoiser entre 0 et 1, croissance positive)".into());
+                return Err(CreatureError::Breeding);
             }
             if let Some(Laying { minutes: [min, max], .. }) = b.lays {
                 if !(min > 0.0 && max >= min) {
-                    return Err("ponte invalide (0 < minutes min ≤ minutes max)".into());
+                    return Err(CreatureError::Laying);
                 }
             }
         }
         for (name, animation) in &species.model.animations {
             if !(animation.cycle > 0.0 && animation.foulee.is_none_or(|f| f > 0.0)) {
-                return Err(format!("animation {name} : cycle et foulée doivent être positifs"));
+                return Err(CreatureError::AnimationCycle(name.clone()));
             }
             if let Some(PauseRule { poids, duree: [min, max] }) = animation.pause {
                 if !(poids >= 0.0 && min > 0.0 && max >= min) {
-                    return Err(format!("animation {name} : pause invalide (poids positif, 0 < durée min ≤ durée max)"));
+                    return Err(CreatureError::AnimationPause(name.clone()));
                 }
             }
             let values = animation.os.values().flat_map(|m| m.rotation.into_iter().chain(m.rotation_fixe).chain(m.translation).chain(m.translation_fixe).chain([m.phase, m.frequence, m.decalage]));
             if values.into_iter().any(|v| !v.is_finite()) {
-                return Err(format!("animation {name} : valeur d'os invalide"));
+                return Err(CreatureError::AnimationBone(name.clone()));
             }
         }
         crate::loot::check_entries(&species.loot)?;
         if species.pauses().count() > u8::MAX as usize {
-            return Err("trop d'inactivités".into());
+            return Err(CreatureError::TooManyPauses);
         }
         Ok(species)
     }
@@ -1013,7 +1046,7 @@ mod tests {
         let shy = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "temperament": "craintif","#);
         assert_eq!(CreatureSpecies::parse("cube", &shy).unwrap().temperament, Temperament::Craintif);
         let unknown = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "temperament": "farouche","#);
-        assert!(CreatureSpecies::parse("cube", &unknown).unwrap_err().contains("farouche"));
+        assert!(CreatureSpecies::parse("cube", &unknown).unwrap_err().to_string().contains("farouche"));
 
         let animated = ok.replace(r#""texture": "cube.png""#, r#""texture": "cube.png", "animations": {
             "marche": { "foulee": 0.5, "os": { "patte*": { "rotation": [20, 0, 0], "phase": 0.5, "decalage": 0.1 } } },
@@ -1026,12 +1059,12 @@ mod tests {
         assert_eq!(CreatureAction::Course.animation_name(&cube), "course");
         assert_eq!(cube.model.animations["marche"].os["patte*"].frequence, 1.0);
         let bad_pause = animated.replace("[10, 20]", "[20, 10]");
-        assert!(CreatureSpecies::parse("cube", &bad_pause).unwrap_err().contains("sommeil"));
+        assert!(CreatureSpecies::parse("cube", &bad_pause).unwrap_err().to_string().contains("sommeil"));
         let bad_stride = animated.replace(r#""foulee": 0.5"#, r#""foulee": 0"#);
         assert!(CreatureSpecies::parse("cube", &bad_stride).is_err());
 
         let typo = ok.replace("walk_speed", "walk_sped");
-        assert!(CreatureSpecies::parse("cube", &typo).unwrap_err().contains("walk_sped"));
+        assert!(CreatureSpecies::parse("cube", &typo).unwrap_err().to_string().contains("walk_sped"));
         let flat = ok.replace(r#""height": 1"#, r#""height": 0"#);
         assert!(CreatureSpecies::parse("cube", &flat).is_err());
         let groups = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "min_group": 3, "max_group": 2,"#);
