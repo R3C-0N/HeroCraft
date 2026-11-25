@@ -289,10 +289,9 @@ fn plan_guide(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i
     let structures = &generator.structures;
     let a = structures.region_settlement(generator, face, ra.0, ra.1)?;
     let b = structures.region_settlement(generator, face, rb.0, rb.1)?;
-    if let Some(others) = link.others(rx, rz) {
-        if others.iter().any(|&(ox, oz)| structures.region_settlement(generator, face, ox, oz).is_some()) {
-            return None;
-        }
+    if let Some(others) = link.others(rx, rz)
+        && others.iter().any(|&(ox, oz)| structures.region_settlement(generator, face, ox, oz).is_some()) {
+        return None;
     }
     herocraft_common::prof_scope!("world::roads::plan_guide");
     let (exit_a, launch_a) = best_exit(a, b.center)?;

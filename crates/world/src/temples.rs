@@ -502,7 +502,7 @@ mod tests {
         let inside = (city.gate.0 - 7 * dx, city.gate.1 - 7 * dz);
         let shut = city.gate_rect;
         let closed = walk(&past, site.face, inside, city.center, (city.outer + 40) as f64, |x, z| shut.contains(x, z));
-        let escaped: Vec<_> = closed.iter().filter(|(&(x, z), &y)| y != i32::MIN && city.ring(x, z).is_none()).map(|(c, _)| *c).collect();
+        let escaped: Vec<_> = closed.iter().filter(|&(&(x, z), &y)| y != i32::MIN && city.ring(x, z).is_none()).map(|(c, _)| *c).collect();
         assert!(escaped.is_empty(), "on sort de la ville par {:?}", &escaped[..escaped.len().min(5)]);
         assert!(reaches(&closed, (arena.x, arena.z)), "on n'atteint pas l'arène une fois la porte refermée");
         // La grande rue de l'axe est barrée : tout droit, on bute sur une barricade

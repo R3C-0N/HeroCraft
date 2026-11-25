@@ -316,12 +316,12 @@ impl Figure {
     }
 
     /// Les faces dans une pose complète : comme `posed`, chaque os tourné et déplacé en plus
-    pub fn posed_with(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = Quad> + '_ {
+    pub fn posed_with(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = Quad> + use<'_> {
         self.posed_bones(pose, width).map(|(_, quad)| quad)
     }
 
     /// Comme `posed_with`, avec l'os de la pièce qui porte chaque quadrilatère
-    pub fn posed_bones(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = (Bone, Quad)> + '_ {
+    pub fn posed_bones(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = (Bone, Quad)> + use<'_> {
         let scale = vec3(width, 1.0, width);
         let lift = vec3(0.0, self.hover, 0.0);
         let (frames, locals) = self.bone_frames_and_locals(pose);

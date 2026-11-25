@@ -547,27 +547,25 @@ impl PlanetMesh {
         roads: bool,
     ) -> Option<(i32, BlockId)> {
         let ground = elevation.floor() as i32;
-        if settlements {
-            if let Some(s) = generator.settlement_at(face, x, z) {
-                let span = s.span(x, z, ground);
-                if !span.is_empty() {
-                    for y in span.rev() {
-                        match s.block(x, y, z, ground) {
-                            Some(b) if !b.is_air() => {
-                                return Some((y + 1, b));
-                            }
-                            _ => {}
+        if settlements
+            && let Some(s) = generator.settlement_at(face, x, z) {
+            let span = s.span(x, z, ground);
+            if !span.is_empty() {
+                for y in span.rev() {
+                    match s.block(x, y, z, ground) {
+                        Some(b) if !b.is_air() => {
+                            return Some((y + 1, b));
                         }
+                        _ => {}
                     }
-                    // Le plan ne fait que creuser cette colonne (une cour, une rue) : sol naturel
-                    return None;
                 }
+                // Le plan ne fait que creuser cette colonne (une cour, une rue) : sol naturel
+                return None;
             }
         }
-        if roads {
-            if let Some(b) = generator.roads.surface(generator, face, x, z) {
-                return Some((ground, b));
-            }
+        if roads
+            && let Some(b) = generator.roads.surface(generator, face, x, z) {
+            return Some((ground, b));
         }
         None
     }
@@ -620,12 +618,11 @@ impl PlanetMesh {
             let (bx, bz) = (to_block(u_mid), to_block(v_mid));
             // Ville, village ou chemin sous le centre de la cellule : dessus et matière du plus
             // haut bloc qu'ils posent dans cette colonne
-            if (show_settlements || show_roads) && !is_water {
-                if let Some((top, block)) = Self::structure_top(generator, key.face, bx, bz, raw_elevation, show_settlements, show_roads) {
-                    let color = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, 2);
-                    let material = textured.then_some(block);
-                    return LodCell { height: top as f64, water: false, color, top: material, under: material };
-                }
+            if (show_settlements || show_roads) && !is_water
+                && let Some((top, block)) = Self::structure_top(generator, key.face, bx, bz, raw_elevation, show_settlements, show_roads) {
+                let color = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, 2);
+                let material = textured.then_some(block);
+                return LodCell { height: top as f64, water: false, color, top: material, under: material };
             }
             let color = match filter {
                 herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped),

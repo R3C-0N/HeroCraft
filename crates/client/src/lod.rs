@@ -490,12 +490,12 @@ impl PlanetLodManager {
                 // Rien n'est encore affiché (démarrage, nouvelle planète) : génération bloquante
                 herocraft_common::prof_scope!("lod::generate_missing_patches");
                 herocraft_common::prof_value!("lod.patchs_manquants_par_maj", missing_patch_keys.len());
-                let gen = generator.clone();
+                let world_gen = generator.clone();
                 let new_patches: Vec<(QuadNodeKey, PlanetMesh)> = self.thread_pool.install(|| {
                     missing_patch_keys
                         .into_par_iter()
                         .map(|key| {
-                            let patch = PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, quick_detail(key.level), filter);
+                            let patch = PlanetMesh::generate_lod_patch_stepped(&world_gen, &key, base_radius, quick_detail(key.level), filter);
                             (key, patch)
                         })
                         .collect()
@@ -541,15 +541,14 @@ impl PlanetLodManager {
 
         // 3. Bascule vers les nouvelles feuilles dès que tous leurs patchs sont prêts
         let mut leaves_switched = false;
-        if let Some(pending) = &self.pending_leaves {
-            if pending.iter().all(|l| self.lod_cache.contains_key(&l.key)) {
-                self.current_leaves = self.pending_leaves.take().unwrap_or_default();
-                leaves_switched = true;
-                // Plus aucune feuille affichée n'a besoin des patchs de l'ancienne précision
-                self.stale_patches.clear();
-                self.update_wanted();
-                self.spawn_detail_tasks(generator);
-            }
+        if let Some(pending) = &self.pending_leaves
+            && pending.iter().all(|l| self.lod_cache.contains_key(&l.key)) {
+            self.current_leaves = self.pending_leaves.take().unwrap_or_default();
+            leaves_switched = true;
+            // Plus aucune feuille affichée n'a besoin des patchs de l'ancienne précision
+            self.stale_patches.clear();
+            self.update_wanted();
+            self.spawn_detail_tasks(generator);
         }
 
         if !leaves_switched && !received_new_mesh && !self.last_camera_pos.is_nan() {
@@ -591,12 +590,11 @@ impl PlanetLodManager {
         if res.detailed {
             self.pending_details.remove(&res.key);
             // Le patch rapide est remplacé sur place : même feuille, nouveau maillage
-            if let Some(mesh) = res.mesh {
-                if let std::collections::hash_map::Entry::Occupied(mut e) = self.lod_cache.entry(res.key) {
-                    e.insert(mesh);
-                    self.detailed.insert(res.key);
-                    return true;
-                }
+            if let Some(mesh) = res.mesh
+                && let std::collections::hash_map::Entry::Occupied(mut e) = self.lod_cache.entry(res.key) {
+                e.insert(mesh);
+                self.detailed.insert(res.key);
+                return true;
             }
         } else if let Some(mesh) = res.mesh {
             self.pending_patches.remove(&res.key);
@@ -639,10 +637,10 @@ impl PlanetLodManager {
                 continue;
             }
             self.pending_details.insert(key);
-            let (tx, gen, wanted) = (self.patch_tx.clone(), generator.clone(), self.wanted.clone());
+            let (tx, world_gen, wanted) = (self.patch_tx.clone(), generator.clone(), self.wanted.clone());
             self.detail_pool.spawn(move || {
                 let still_wanted = wanted.read().map(|w| w.contains(&key)).unwrap_or(true);
-                let mesh = still_wanted.then(|| PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, detail, filter));
+                let mesh = still_wanted.then(|| PlanetMesh::generate_lod_patch_stepped(&world_gen, &key, base_radius, detail, filter));
                 let _ = tx.send(VoxelBuildResult { generation, patch_epoch, key, mesh, detailed: true });
             });
         }

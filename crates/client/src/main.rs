@@ -85,8 +85,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() {
     // Variables du fichier `.env` (sans écraser celles déjà définies dans l'environnement)
     let _ = dotenvy::dotenv();
-    std::env::set_var("RUST_LOG", "info");
-    env_logger::init();
+    // Niveau `info` par défaut, `RUST_LOG` (ou le `.env`) le remplace s'il est défini
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     herocraft_common::profiler::init_main_thread();
     if cfg!(debug_assertions) {
         warn!("Jeu compilé en DEBUG : il tourne 5 à 10 fois plus lentement qu'en release. Pour jouer : cargo run --release --bin herocraft_client");

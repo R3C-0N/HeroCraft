@@ -1344,10 +1344,9 @@ impl SkillCatalog {
             if cast.follow_up.as_ref().is_some_and(|f| !f.delay.is_finite() || f.delay.at(1) < 0.0) {
                 return Err(SkillError::FollowUp);
             }
-            if let Some(c) = &cast.charge {
-                if !(c.min >= 0.0 && c.max >= c.min && c.max <= 10.0 && c.power.iter().all(|p| p.is_finite() && *p > 0.0)) {
-                    return Err(SkillError::Charge);
-                }
+            if let Some(c) = &cast.charge
+                && !(c.min >= 0.0 && c.max >= c.min && c.max <= 10.0 && c.power.iter().all(|p| p.is_finite() && *p > 0.0)) {
+                return Err(SkillError::Charge);
             }
             if cast.uses_round && !cast.weapons.contains(&crate::weapons::WeaponKind::Crossbow) {
                 return Err(SkillError::UsesRound);

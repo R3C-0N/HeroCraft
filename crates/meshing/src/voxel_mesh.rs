@@ -999,10 +999,9 @@ impl VoxelMeshBuilder {
             }
             let span = spans[(z + LIGHT_REACH) as usize * side + (x + LIGHT_REACH) as usize]
                 .get_or_insert_with(|| generator.structure_span(column, face, bx, bz));
-            if span.contains(&by) {
-                if let Some(block) = generator.structure_block(column, face, bx, by, bz) {
-                    return covers(block);
-                }
+            if span.contains(&by)
+                && let Some(block) = generator.structure_block(column, face, bx, by, bz) {
+                return covers(block);
             }
             if (by as f64) < column.elevation.floor() {
                 block_light::FULL

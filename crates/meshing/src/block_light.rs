@@ -58,13 +58,12 @@ impl LightField {
         let mut state = vec![0u8; volume];
         let mut queue = VecDeque::new();
         for &&(x, y, z, level) in &sources {
-            if let Some(i) = index(x, y, z) {
-                if levels[i] < level {
-                    levels[i] = level.min(MAX_LIGHT);
-                    // Le bloc qui éclaire laisse sortir sa lumière de tous côtés
-                    state[i] = KNOWN;
-                    queue.push_back((x, y, z));
-                }
+            if let Some(i) = index(x, y, z)
+                && levels[i] < level {
+                levels[i] = level.min(MAX_LIGHT);
+                // Le bloc qui éclaire laisse sortir sa lumière de tous côtés
+                state[i] = KNOWN;
+                queue.push_back((x, y, z));
             }
         }
         while let Some((x, y, z)) = queue.pop_front() {

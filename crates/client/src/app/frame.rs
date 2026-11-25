@@ -304,10 +304,9 @@ impl App {
             state.update_cloud_weather(&client_weather.model);
             let visual = *client_weather.visual();
             let raining = ground && visual.precipitation > 0.01;
-            if let Some(collider) = camera.collider.as_ref().filter(|_| raining) {
-                if let Some(columns) = column_tops.update(dt, collider, generator, camera.player_pos, camera.base_radius) {
-                    state.set_precipitation_columns(&columns);
-                }
+            if let Some(collider) = camera.collider.as_ref().filter(|_| raining)
+                && let Some(columns) = column_tops.update(dt, collider, generator, camera.player_pos, camera.base_radius) {
+                state.set_precipitation_columns(&columns);
             }
             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
             state.update_precipitation(raining.then_some(precipitation::PrecipFrame {
@@ -852,12 +851,11 @@ impl App {
         } = self;
         // Commandes de test (`HEROCRAFT_COMMANDES=fichier`) : les lignes déposées dans
         // le fichier passent comme si elles avaient été tapées dans le chat
-        if let Some(file) = command_file.as_ref() {
-            if let Some(text) = std::fs::read_to_string(file).ok().filter(|t| !t.trim().is_empty()) {
-                let _ = std::fs::write(file, "");
-                for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
-                    ui_state.chat.inject(line.to_string());
-                }
+        if let Some(file) = command_file.as_ref()
+            && let Some(text) = std::fs::read_to_string(file).ok().filter(|t| !t.trim().is_empty()) {
+            let _ = std::fs::write(file, "");
+            for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                ui_state.chat.inject(line.to_string());
             }
         }
         for line in ui_state.chat.take_submitted() {

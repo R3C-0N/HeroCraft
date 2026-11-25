@@ -45,10 +45,9 @@ pub fn find(event_loop: &ActiveEventLoop, wanted: &str) -> Option<MonitorHandle>
     }
 
     // Nom Windows introuvable tel quel : on est probablement sous WSLg
-    if key.starts_with("DISPLAY") {
-        if let Some(m) = find_via_windows(&monitors, &key) {
-            return Some(m);
-        }
+    if key.starts_with("DISPLAY")
+        && let Some(m) = find_via_windows(&monitors, &key) {
+        return Some(m);
     }
 
     let names: Vec<String> = monitors.iter().filter_map(|m| m.name()).collect();

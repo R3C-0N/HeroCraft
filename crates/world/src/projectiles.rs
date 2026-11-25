@@ -333,11 +333,10 @@ impl CreatureWorld {
                             let key = key_of(k);
                             let guard = self.guards.iter().find(|g| g.key == key).copied();
                             // De face, sur la garde du Mur vivant : il s'arrête net
-                            if let Some((facing, cos)) = guard.and_then(|g| g.front) {
-                                if (-p.direction).dot(facing) >= cos {
-                                    end = Some((at, ProjectileEnd::Blocked));
-                                    break;
-                                }
+                            if let Some((facing, cos)) = guard.and_then(|g| g.front)
+                                && (-p.direction).dot(facing) >= cos {
+                                end = Some((at, ProjectileEnd::Blocked));
+                                break;
                             }
                             // Le vent du Manteau de Zéphyr l'écarte
                             let deflects = guard.and_then(|g| g.deflect).is_some_and(|most| most == ProjectileSize::Large || p.size == ProjectileSize::Small);
@@ -397,12 +396,11 @@ impl CreatureWorld {
                         for c in self.creatures.iter().filter(|c| c.is_alive() && !c.hidden && self.is_foe(p, c) && c.position.distance(at) <= blast) {
                             blasts.push((c.id, at, damage, kind));
                         }
-                        if !p.allied {
-                            if let Shooter::Creature { id, .. } = p.shooter {
-                                for (k, feet) in players.iter().enumerate() {
-                                    if feet.distance(at) <= blast && !p.spared.contains(&key_of(k)) {
-                                        player_hits.push(PlayerHit { player: k, creature_id: id, species, damage, kind });
-                                    }
+                        if !p.allied
+                            && let Shooter::Creature { id, .. } = p.shooter {
+                            for (k, feet) in players.iter().enumerate() {
+                                if feet.distance(at) <= blast && !p.spared.contains(&key_of(k)) {
+                                    player_hits.push(PlayerHit { player: k, creature_id: id, species, damage, kind });
                                 }
                             }
                         }
@@ -468,10 +466,9 @@ impl CreatureWorld {
             if wall {
                 // Un mur arrête les tirs du camp d'en face : un mur invoqué, ceux des bêtes hostiles
                 let blocks = c.summoner.is_some() != p.allied;
-                if blocks && !p.through_obstacles {
-                    if let Some(t) = box_entry(from, dir, step, c.position, c.yaw, &species.collider(), c.scale() * block, p.radius) {
-                        meets.push((t, Meet::Obstacle(c.id)));
-                    }
+                if blocks && !p.through_obstacles
+                    && let Some(t) = box_entry(from, dir, step, c.position, c.yaw, &species.collider(), c.scale() * block, p.radius) {
+                    meets.push((t, Meet::Obstacle(c.id)));
                 }
                 continue;
             }

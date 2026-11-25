@@ -1863,20 +1863,18 @@ impl CreatureWorld {
             // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
             let defends = self.registry.get(self.creatures[hunter].species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd || !a.hunts_players);
             let attacker = self.creatures[hunter].id;
-            if self.strike(prey, from, damage, kind, 0.0, false) == Some(true) && !defends {
-                if let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker) {
-                    c.sated = SATED_TIME;
-                }
+            if self.strike(prey, from, damage, kind, 0.0, false) == Some(true) && !defends
+                && let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker) {
+                c.sated = SATED_TIME;
             }
             // Un mur incandescent brûle qui le frappe
             let thorns = self.creatures.iter().find(|c| c.id == prey).and_then(|c| self.registry.get(c.species)).and_then(|s| s.obstacle).and_then(|o| o.thorns);
             if let Some(thorns) = thorns {
                 let at = self.creatures.iter().find(|c| c.id == prey).map_or(from, |c| c.position);
                 self.strike(attacker, at, thorns.damage, DamageKind::Magical, 0.0, false);
-                if thorns.burn > 0.0 && thorns.seconds > 0.0 {
-                    if let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker && c.is_alive()) {
-                        (c.bleed, c.bleed_left, c.bleed_next) = (thorns.burn, thorns.seconds, 1.0);
-                    }
+                if thorns.burn > 0.0 && thorns.seconds > 0.0
+                    && let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker && c.is_alive()) {
+                    (c.bleed, c.bleed_left, c.bleed_next) = (thorns.burn, thorns.seconds, 1.0);
                 }
             }
         }
@@ -2747,10 +2745,9 @@ impl Walker<'_, '_> {
             // En vol, elle ne marche ni ne frappe
             flight.peak = flight.peak.max(altitude);
             c.stun = c.stun.max(0.1);
-            if c.vertical_speed == 0.0 && altitude <= ground + 1e-4 {
-                if let Some(flight) = c.flight.take() {
-                    c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
-                }
+            if c.vertical_speed == 0.0 && altitude <= ground + 1e-4
+                && let Some(flight) = c.flight.take() {
+                c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
             }
         }
         let on_ground = altitude <= ground + 1e-4 && c.vertical_speed <= 0.0;
@@ -2780,10 +2777,9 @@ impl Walker<'_, '_> {
             let path = self.path(c.position, altitude, heading, reach, species.body.height);
             // Au calme et à pied sec, elle longe l'eau plutôt que d'y entrer, si elle le peut
             let avoid_water = c.panic <= 0.0 && !c.swimming;
-            if turn.abs() < FACING_TOLERANCE && path.score(avoid_water) < LOOKAHEAD_STEPS * 2 + 1 {
-                if let Some(yaw) = self.detour(c, altitude, reach, species.body.height, path, avoid_water, rng) {
-                    c.target_yaw = yaw;
-                }
+            if turn.abs() < FACING_TOLERANCE && path.score(avoid_water) < LOOKAHEAD_STEPS * 2 + 1
+                && let Some(yaw) = self.detour(c, altitude, reach, species.body.height, path, avoid_water, rng) {
+                c.target_yaw = yaw;
             }
             if let Some(ahead) = path.first {
                 // Une marche devant : elle saute dessus (et sort ainsi de l'eau)

@@ -876,20 +876,18 @@ impl House {
         if self.form == Form::Burrow {
             return self.burrow_block(x, y, z, ground);
         }
-        if let Some(tower) = self.tower_rect() {
-            if tower.contains(x, z) && y >= f {
-                return self.tower_block(&tower, x, y, z, ground);
-            }
+        if let Some(tower) = self.tower_rect()
+            && tower.contains(x, z) && y >= f {
+            return self.tower_block(&tower, x, y, z, ground);
         }
         let h = self.wall_height();
         let foot = &self.foot;
         let pitched = self.style.roof.is_some();
 
         if !foot.contains(x, z) {
-            if let Some(porch) = self.porch_rect() {
-                if porch.contains(x, z) && y < f + 3 {
-                    return self.porch_block(&porch, x, y, z, ground);
-                }
+            if let Some(porch) = self.porch_rect()
+                && porch.contains(x, z) && y < f + 3 {
+                return self.porch_block(&porch, x, y, z, ground);
             }
             // Devant la porte : un seuil, et de l'air sur la hauteur de la porte même si le terrain monte
             let (ox, oz) = self.door.delta();
@@ -982,7 +980,7 @@ impl House {
     /// Torches posées au sol à l'intérieur (colonne, niveau au-dessus du plancher) : dans un coin du
     /// côté de la porte à chaque étage, dans les deux coins pour une taverne ou une église, et
     /// devant l'autel d'une église
-    pub fn torches(&self) -> impl Iterator<Item = (i32, i32, i32)> {
+    pub fn torches(&self) -> impl Iterator<Item = (i32, i32, i32)> + use<> {
         let foot = &self.foot;
         // Les deux coins intérieurs le long du mur de la porte
         let corners = match self.door {
@@ -2871,10 +2869,9 @@ impl Settlement {
                 if !area.contains(x, z) {
                     continue;
                 }
-                if let Some(block) = self.block_in(epoch, x, y, z, ground(x, z)) {
-                    if block.light() > 0 {
-                        found.push((x, y, z, block));
-                    }
+                if let Some(block) = self.block_in(epoch, x, y, z, ground(x, z))
+                    && block.light() > 0 {
+                    found.push((x, y, z, block));
                 }
             }
         }
@@ -2984,10 +2981,9 @@ impl StructureMap {
     /// L'établissement dont le plan couvre la colonne (x, z) d'une face, s'il y en a un
     pub fn at(&self, generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32) -> Option<&Settlement> {
         let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
-        if let Some(settlement) = self.cell(generator, face, cx, cz) {
-            if settlement.bounds.contains(x, z) {
-                return Some(settlement);
-            }
+        if let Some(settlement) = self.cell(generator, face, cx, cz)
+            && settlement.bounds.contains(x, z) {
+            return Some(settlement);
         }
         // Une ville déborde de sa case, jamais de sa région
         let town = self.region_settlement(generator, face, cx.div_euclid(REGION_CELLS), cz.div_euclid(REGION_CELLS))?;
@@ -2999,10 +2995,9 @@ impl StructureMap {
         let mut found = Vec::new();
         for cz in area.z0.div_euclid(CELL)..=(area.z1 - 1).div_euclid(CELL) {
             for cx in area.x0.div_euclid(CELL)..=(area.x1 - 1).div_euclid(CELL) {
-                if let Some(s) = self.cell(generator, face, cx, cz) {
-                    if s.bounds.intersects(&area) {
-                        found.push(s);
-                    }
+                if let Some(s) = self.cell(generator, face, cx, cz)
+                    && s.bounds.intersects(&area) {
+                    found.push(s);
                 }
             }
         }
@@ -3010,10 +3005,9 @@ impl StructureMap {
         let region = |v: i32| v.div_euclid(CELL).div_euclid(REGION_CELLS);
         for rz in region(area.z0)..=region(area.z1 - 1) {
             for rx in region(area.x0)..=region(area.x1 - 1) {
-                if let Some(town) = self.region_settlement(generator, face, rx, rz) {
-                    if town.kind == SettlementKind::Town && town.bounds.intersects(&area) && !found.iter().any(|s| std::ptr::eq(*s, town)) {
-                        found.push(town);
-                    }
+                if let Some(town) = self.region_settlement(generator, face, rx, rz)
+                    && town.kind == SettlementKind::Town && town.bounds.intersects(&area) && !found.iter().any(|s| std::ptr::eq(*s, town)) {
+                    found.push(town);
                 }
             }
         }
@@ -3046,10 +3040,9 @@ impl StructureMap {
         let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
         for dz in -1..=1 {
             for dx in -1..=1 {
-                if let Some(city) = self.memory_city(generator, face, cx + dx, cz + dz, holder) {
-                    if city.covers(x, z) {
-                        return Some(city);
-                    }
+                if let Some(city) = self.memory_city(generator, face, cx + dx, cz + dz, holder)
+                    && city.covers(x, z) {
+                    return Some(city);
                 }
             }
         }
@@ -3061,10 +3054,9 @@ impl StructureMap {
         let mut found = Vec::new();
         for cz in area.z0.div_euclid(CELL) - 1..=(area.z1 - 1).div_euclid(CELL) + 1 {
             for cx in area.x0.div_euclid(CELL) - 1..=(area.x1 - 1).div_euclid(CELL) + 1 {
-                if let Some(city) = self.memory_city(generator, face, cx, cz, holder) {
-                    if city.settlement.bounds.intersects(&area) {
-                        found.push(city);
-                    }
+                if let Some(city) = self.memory_city(generator, face, cx, cz, holder)
+                    && city.settlement.bounds.intersects(&area) {
+                    found.push(city);
                 }
             }
         }
@@ -4404,10 +4396,9 @@ impl TownMask {
                     for dx in -reach..=reach {
                         let (cx, cz) = (px.floor() as i32 + dx, pz.floor() as i32 + dz);
                         let (ex, ez) = (cx as f64 + 0.5 - px, cz as f64 + 0.5 - pz);
-                        if ex * ex + ez * ez <= r * r {
-                            if let Some(v) = paint(self.get(cx, cz)) {
-                                self.set(cx, cz, v);
-                            }
+                        if ex * ex + ez * ez <= r * r
+                            && let Some(v) = paint(self.get(cx, cz)) {
+                            self.set(cx, cz, v);
                         }
                     }
                 }
@@ -5075,10 +5066,9 @@ fn plan_ruins(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut D
             p.take(Piece::RuinTower(RuinTower { center, radius, floor, height, seed }), 1);
             let (w, d) = (dice.range(5, 8), dice.range(5, 8));
             let foot = Rect::sized(x + radius + 2, z - d / 2, w, d);
-            if p.free(&foot) {
-                if let Some(floor) = floor_for(p.generator, p.face, &foot, 6) {
-                    p.take(Piece::RuinHouse(RuinHouse { foot, floor, height: dice.range(2, 5), seed: seed ^ 1 }), 1);
-                }
+            if p.free(&foot)
+                && let Some(floor) = floor_for(p.generator, p.face, &foot, 6) {
+                p.take(Piece::RuinHouse(RuinHouse { foot, floor, height: dice.range(2, 5), seed: seed ^ 1 }), 1);
             }
         }
         _ => {

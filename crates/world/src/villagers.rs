@@ -407,7 +407,7 @@ fn random_name(culture: Culture, feminine: bool, rng: &mut StdRng) -> String {
 /// sexe (barbe et coiffure), puis vêtue selon le métier
 fn appearance_for(culture: Culture, profession: &Profession, feminine: bool, rng: &mut StdRng) -> herocraft_common::hero::Appearance {
     let mut look = {
-        let mut draw = || rng.gen::<f64>();
+        let mut draw = || rng.r#gen::<f64>();
         atlas().aleatoire(&mut draw, Some(culture.espece_id()))
     };
     if feminine {
@@ -1049,7 +1049,7 @@ impl Villages {
         let culture = if rng.gen_bool(0.55) { Culture::Humains } else { Culture::ALL[rng.gen_range(1..Culture::ALL.len())] };
         let card = card_for(culture, p, "Voyageur".to_string(), rng);
         let species = self.species_of(p);
-        let herd = TRAVELLER_HERD_BASE | self.rng.gen::<u32>() as u64;
+        let herd = TRAVELLER_HERD_BASE | self.rng.r#gen::<u32>() as u64;
         let walk_speed = 1.5;
         self.people.push(Person {
             card,
@@ -1098,10 +1098,9 @@ impl Villages {
         if let Some(id) = self.people[i].creature.take() {
             world.remove(id);
             self.cards.remove(&id);
-            if let (Role::Resident { town, .. }, false) = (&self.people[i].role, self.people[i].guard) {
-                if let Some(n) = self.outdoors.get_mut(town) {
-                    *n = n.saturating_sub(1);
-                }
+            if let (Role::Resident { town, .. }, false) = (&self.people[i].role, self.people[i].guard)
+                && let Some(n) = self.outdoors.get_mut(town) {
+                *n = n.saturating_sub(1);
             }
         }
         self.people[i].path.clear();
@@ -1414,16 +1413,14 @@ impl Villages {
     /// Désœuvré : il choisit sa prochaine occupation
     fn choose(&mut self, i: usize, key: TownKey, here: Cell, work: Option<Spot>, world: &mut CreatureWorld) {
         let nav = self.towns[&key].nav.clone();
-        let roll: f64 = self.rng.gen();
+        let roll: f64 = self.rng.r#gen();
         let person = &self.people[i];
         let guard = person.guard;
         // Un garde ne quitte pas l'entrée qu'il garde : il y revient (après une poursuite) et y reste
-        if guard {
-            if let Some(spot) = work {
-                if self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
-                    return;
-                }
-            }
+        if guard
+            && let Some(spot) = work
+            && self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
+            return;
         }
         // Une tâche à l'intérieur : de temps en temps, et toujours quand la rue est trop peuplée
         let Role::Resident { home, .. } = self.people[i].role else { return };
@@ -1437,10 +1434,9 @@ impl Villages {
                 return;
             }
         }
-        if let Some(spot) = work.filter(|_| roll < 0.55) {
-            if self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
-                return;
-            }
+        if let Some(spot) = work.filter(|_| roll < 0.55)
+            && self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
+            return;
         }
         if roll < 0.8 && self.people[i].chat_cooldown <= 0.0 && self.find_chat(i, key, here, world) {
             return;
@@ -1457,12 +1453,10 @@ impl Villages {
                 return;
             }
         }
-        if roll < 0.93 {
-            if let Some(spot) = self.gathering_spot(i, key, world) {
-                if self.send(i, &nav, here, spot.cell, Goal::Wander, Some(spot)) {
-                    return;
-                }
-            }
+        if roll < 0.93
+            && let Some(spot) = self.gathering_spot(i, key, world)
+            && self.send(i, &nav, here, spot.cell, Goal::Wander, Some(spot)) {
+            return;
         }
         let target = self.towns[&key].random_street(&mut self.rng);
         if !self.send(i, &nav, here, target, Goal::Wander, None) {
@@ -1610,7 +1604,7 @@ impl Villages {
                         return;
                     }
                     self.end_chat(i, world);
-                    let roll: f64 = self.rng.gen();
+                    let roll: f64 = self.rng.r#gen();
                     if roll < 0.5 && self.people[i].chat_cooldown <= 0.0 && self.find_chat(i, key, here, world) {
                         return;
                     }
@@ -1750,12 +1744,10 @@ impl Villages {
         let Role::Traveller(t) = &mut self.people[i].role else { return };
         let key = (face, t.to.0, t.to.1);
         t.visiting = Some((key, self.rng.gen_range(90.0..300.0)));
-        if !self.towns.contains_key(&key) {
-            if let Some(s) = generator.structures.at(generator, face, t.to.0, t.to.1) {
-                if s.kind != SettlementKind::Ruins {
-                    self.found_town(s, generator);
-                }
-            }
+        if !self.towns.contains_key(&key)
+            && let Some(s) = generator.structures.at(generator, face, t.to.0, t.to.1)
+            && s.kind != SettlementKind::Ruins {
+            self.found_town(s, generator);
         }
         let person = &mut self.people[i];
         person.task = Task::Idle;
@@ -1788,11 +1780,10 @@ impl Villages {
         self.end_chat(i, world);
         // Il quitte la ville par les rues jusqu'au départ du chemin, puis suit la route
         let here = self.people[i].creature.and_then(|id| world.creatures().iter().find(|c| c.id == id)).and_then(|c| Self::cell_of(world, c.position)).map(|(_, cell)| cell);
-        if let (Some(here), Some(town), Some(&start)) = (here, self.towns.get(&key), route.first()) {
-            if let Some(mut streets) = town.nav.path(here, start) {
-                streets.extend(route);
-                route = streets;
-            }
+        if let (Some(here), Some(town), Some(&start)) = (here, self.towns.get(&key), route.first())
+            && let Some(mut streets) = town.nav.path(here, start) {
+            streets.extend(route);
+            route = streets;
         }
         let person = &mut self.people[i];
         if let Role::Traveller(t) = &mut person.role {
@@ -1886,10 +1877,9 @@ mod tests {
         let mut found: Option<&Settlement> = None;
         for rz in 0..crate::structures::REGIONS_PER_FACE {
             for rx in 0..crate::structures::REGIONS_PER_FACE {
-                if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz) {
-                    if found.is_none_or(|f| s.pieces.len() < f.pieces.len()) {
-                        found = Some(s);
-                    }
+                if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz)
+                    && found.is_none_or(|f| s.pieces.len() < f.pieces.len()) {
+                    found = Some(s);
                 }
             }
         }
@@ -2197,11 +2187,10 @@ mod tests {
         let mut arrived = false;
         for _ in 0..(len as f32 * ROUTE_SPACING as f32 / 1.5 / 0.5) as usize + 20 {
             villages.think_traveller(i, &mut world, &mut query, &generator, 0.5);
-            if let Role::Traveller(t) = &villages.people[i].role {
-                if t.visiting.is_some() {
-                    arrived = true;
-                    break;
-                }
+            if let Role::Traveller(t) = &villages.people[i].role
+                && t.visiting.is_some() {
+                arrived = true;
+                break;
             }
         }
         assert!(arrived, "le voyageur n'est jamais arrivé");

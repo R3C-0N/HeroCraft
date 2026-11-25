@@ -241,12 +241,12 @@ impl PlanetQuadTree {
 
     /// Élévation du relief au point (u, v) d'une face, arrondie à la colonne de voxels la plus proche.
     /// Le relief étant déterministe, chaque colonne n'est échantillonnée qu'une fois entre deux évaluations.
-    fn cached_elevation(&self, gen: &PlanetWorldGenerator, face: PlanetFace, u: f64, v: f64) -> f64 {
+    fn cached_elevation(&self, world_gen: &PlanetWorldGenerator, face: PlanetFace, u: f64, v: f64) -> f64 {
         let iu = ((u + 1.0) * 0.5 * ELEVATION_CACHE_GRID).round() as i32;
         let iv = ((v + 1.0) * 0.5 * ELEVATION_CACHE_GRID).round() as i32;
         let mut cache = self.elevation_cache.lock().unwrap();
-        if cache.seed != Some(gen.planet.seed) || cache.values.len() > ELEVATION_CACHE_MAX_ENTRIES {
-            cache.seed = Some(gen.planet.seed);
+        if cache.seed != Some(world_gen.planet.seed) || cache.values.len() > ELEVATION_CACHE_MAX_ENTRIES {
+            cache.seed = Some(world_gen.planet.seed);
             cache.values.clear();
         }
         *cache.values.entry((face, iu, iv)).or_insert_with(|| {
@@ -254,7 +254,7 @@ impl PlanetQuadTree {
             let snapped_v = iv as f64 / ELEVATION_CACHE_GRID * 2.0 - 1.0;
             let dir = face.uv_to_sphere_direction(snapped_u, snapped_v);
             let (lat, lon) = unit_sphere_to_lat_lon(dir);
-            gen.sample_elevation(dir, lat, lon)
+            world_gen.sample_elevation(dir, lat, lon)
         })
     }
 
@@ -322,8 +322,8 @@ impl PlanetQuadTree {
         let closest_dir = node.face.uv_to_sphere_direction(closest_u, closest_v);
 
         // Calcule le rayon réel de surface au point le plus proche (tenant compte du relief montagneux ou de la mer)
-        let surface_radius = if let Some(gen) = generator {
-            let elev = self.cached_elevation(gen, node.face, closest_u, closest_v);
+        let surface_radius = if let Some(world_gen) = generator {
+            let elev = self.cached_elevation(world_gen, node.face, closest_u, closest_v);
             let eff_elev = elev.max(SEA_LEVEL_BLOCKS);
             self.base_radius + eff_elev * altitude_scale
         } else {
@@ -484,14 +484,14 @@ mod tests {
         assert!(voxels_mountain > 0, "Les voxels doivent apparaître sur les montagnes");
 
         let desc = crate::PlanetDescriptor::default();
-        let gen = PlanetWorldGenerator::new(desc);
+        let world_gen = PlanetWorldGenerator::new(desc);
         let dir = DVec3::new(0.0, 0.0, 1.0);
         let (lat, lon) = unit_sphere_to_lat_lon(dir);
-        let elev = gen.sample_elevation(dir, lat, lon).max(SEA_LEVEL_BLOCKS);
+        let elev = world_gen.sample_elevation(dir, lat, lon).max(SEA_LEVEL_BLOCKS);
         let altitude_scale = qt.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / crate::edits::FACE_BLOCKS as f64);
         let ground_r = qt.base_radius + elev * altitude_scale;
         let cam_ground = dir * (ground_r + 1.7 * altitude_scale);
-        let leaves_gen = qt.evaluate_with_generator(cam_ground, Some(&gen));
+        let leaves_gen = qt.evaluate_with_generator(cam_ground, Some(&world_gen));
         let voxels_gen = leaves_gen.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
         assert!(voxels_gen > 0, "Les voxels doivent être générés au sol avec le générateur planétaire");
     }
@@ -500,7 +500,7 @@ mod tests {
     fn test_high_mountain_subdivision_without_holes() {
         let (qt, _) = default_tree();
         let desc = crate::PlanetDescriptor::default();
-        let gen = PlanetWorldGenerator::new(desc);
+        let world_gen = PlanetWorldGenerator::new(desc);
 
         // Recherche d'un point culminant (haute montagne > 300 blocs)
         let mut highest_elev = 0.0;
@@ -512,7 +512,7 @@ mod tests {
                 let v = (step_v as f64) * 0.08;
                 let dir = PlanetFace::PosZ.uv_to_sphere_direction(u, v);
                 let (lat, lon) = unit_sphere_to_lat_lon(dir);
-                let e = gen.sample_elevation(dir, lat, lon);
+                let e = world_gen.sample_elevation(dir, lat, lon);
                 if e > highest_elev {
                     highest_elev = e;
                     peak_dir = dir;
@@ -525,7 +525,7 @@ mod tests {
         let peak_r = qt.base_radius + highest_elev * altitude_scale;
         let cam_peak = peak_dir * (peak_r + 1.7 * altitude_scale);
 
-        let leaves = qt.evaluate_with_generator(cam_peak, Some(&gen));
+        let leaves = qt.evaluate_with_generator(cam_peak, Some(&world_gen));
         let voxel_leaves: Vec<_> = leaves.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).collect();
         assert!(!voxel_leaves.is_empty(), "Au sommet de la montagne, des VoxelChunks doivent être présents");
 

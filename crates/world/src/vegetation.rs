@@ -503,10 +503,9 @@ impl PlanetWorldGenerator {
         if let Some(block) = self.column_tree_block(x, y, z, &mut tree_of) {
             return block;
         }
-        if y == ground {
-            if let Some(plant) = self.ground_plant(column, face, x, z) {
-                return plant;
-            }
+        if y == ground
+            && let Some(plant) = self.ground_plant(column, face, x, z) {
+            return plant;
         }
         BlockId::AIR
     }
@@ -523,11 +522,10 @@ impl PlanetWorldGenerator {
         let mut n = 0;
         for cz in cell_span(z..z + 1) {
             for cx in cell_span(x..x + 1) {
-                if let Some(tree) = tree_of(cx, cz) {
-                    if n < trees.len() {
-                        trees[n] = Some(tree);
-                        n += 1;
-                    }
+                if let Some(tree) = tree_of(cx, cz)
+                    && n < trees.len() {
+                    trees[n] = Some(tree);
+                    n += 1;
                 }
             }
         }
@@ -539,10 +537,9 @@ impl PlanetWorldGenerator {
         let mut top = 0;
         for cz in cell_span(z..z + 1) {
             for cx in cell_span(x..x + 1) {
-                if let Some(tree) = tree_of(cx, cz) {
-                    if tree.covers(x, z) {
-                        top = top.max(tree.top());
-                    }
+                if let Some(tree) = tree_of(cx, cz)
+                    && tree.covers(x, z) {
+                    top = top.max(tree.top());
                 }
             }
         }

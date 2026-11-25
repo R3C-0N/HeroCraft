@@ -1703,10 +1703,10 @@ mod tests {
     fn test_clouds_disappear_in_satellite_view() {
         use crate::camera::{CameraViewMode, OrbitCamera};
         let desc = herocraft_world::PlanetDescriptor::default();
-        let gen = herocraft_world::PlanetWorldGenerator::new(desc);
+        let world_gen = herocraft_world::PlanetWorldGenerator::new(desc);
 
         // 1. Vue Satellite (distance par défaut = 165.0)
-        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
 
         let calc_vis = |cam: &OrbitCamera| {
@@ -1738,11 +1738,11 @@ mod tests {
     fn test_sky_visibility_at_ground_vs_satellite_across_scales() {
         use crate::camera::{CameraViewMode, OrbitCamera};
         let desc = herocraft_world::PlanetDescriptor::default();
-        let gen = herocraft_world::PlanetWorldGenerator::new(desc);
+        let world_gen = herocraft_world::PlanetWorldGenerator::new(desc);
 
         for &radius in &[25.0, 50.0, 100.0] {
             let scale = radius / 25.0;
-            let mut cam = OrbitCamera::new(radius * 6.6, radius, &gen);
+            let mut cam = OrbitCamera::new(radius * 6.6, radius, &world_gen);
 
             let calc_ground_factor = |cam: &OrbitCamera| {
                 if cam.view_mode() != CameraViewMode::SatelliteOrbit {
