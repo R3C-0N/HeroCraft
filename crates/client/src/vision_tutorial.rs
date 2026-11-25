@@ -74,7 +74,7 @@ pub struct VisionTutorial {
     /// L'inventaire du présent, rendu au retour (le soldat porte son paquetage)
     present_inventory: Option<Inventory>,
     /// Soldats figés posés en solo, retirés au retour
-    soldiers: Vec<u64>,
+    soldiers: Vec<herocraft_common::CreatureId>,
     /// Murmure lissé, de 0 à 1
     whisper: f32,
     /// Secondes depuis le début, pour la lueur
@@ -111,7 +111,7 @@ impl VisionTutorial {
     }
 
     /// Le héros revient au présent : son inventaire lui est rendu ; rend les soldats à retirer
-    pub fn end(mut self, inventory: &mut Inventory) -> Vec<u64> {
+    pub fn end(mut self, inventory: &mut Inventory) -> Vec<herocraft_common::CreatureId> {
         if let Some(present) = self.present_inventory.take() {
             *inventory = present;
         }
@@ -162,12 +162,12 @@ impl VisionTutorial {
     }
 
     /// Les soldats posés (à retirer au retour)
-    pub fn add_soldiers(&mut self, ids: impl IntoIterator<Item = u64>) {
+    pub fn add_soldiers(&mut self, ids: impl IntoIterator<Item = herocraft_common::CreatureId>) {
         self.soldiers.extend(ids);
     }
 
     /// Les soldats posés en solo
-    pub fn soldiers(&self) -> &[u64] {
+    pub fn soldiers(&self) -> &[herocraft_common::CreatureId] {
         &self.soldiers
     }
 

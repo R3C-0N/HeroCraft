@@ -21,7 +21,7 @@ pub fn grapple_of<'a>(catalog: &'a SkillCatalog, skill: &str) -> Option<&'a hero
 }
 
 /// Identifiant du joueur en solo
-pub const SOLO_PLAYER: u64 = 0;
+pub const SOLO_PLAYER: herocraft_common::PlayerId = herocraft_common::PlayerId(0);
 
 /// Une compétence qu'un joueur est en train de lancer (le geste et ses visuels). Rang et visée
 /// serviront aux gestes des autres joueurs, quand ils seront dessinés en entier.
@@ -29,7 +29,7 @@ pub const SOLO_PLAYER: u64 = 0;
 #[allow(dead_code)]
 pub struct Play {
     /// `None` : le joueur local
-    pub player: Option<u64>,
+    pub player: Option<herocraft_common::PlayerId>,
     pub skill: String,
     pub rank: u8,
     pub started: Instant,
@@ -49,12 +49,12 @@ impl Play {
 /// Une frappe arrivée, à montrer : où, et qui elle a touché
 #[derive(Debug, Clone)]
 pub struct Shown {
-    pub caster: Option<u64>,
+    pub caster: Option<herocraft_common::PlayerId>,
     pub skill: String,
     pub rank: u8,
     pub center: Vec3,
-    pub creatures: Vec<u64>,
-    pub players: Vec<u64>,
+    pub creatures: Vec<herocraft_common::CreatureId>,
+    pub players: Vec<herocraft_common::PlayerId>,
     /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
     pub contact: bool,
     /// La riposte d'une garde : seuls les visuels de parade se jouent
@@ -78,11 +78,11 @@ pub struct VisualCue {
     pub effect: String,
     pub anchor: Anchor,
     /// Lanceur (`None` : le joueur local)
-    pub caster: Option<u64>,
+    pub caster: Option<herocraft_common::PlayerId>,
     /// Point de départ, pour les ancres fixes (zone, cible au moment du coup, point visé)
     pub point: Vec3,
     /// Créature suivie (ancre `target`)
-    pub creature: Option<u64>,
+    pub creature: Option<herocraft_common::CreatureId>,
     /// Direction visée
     pub aim: Vec3,
     /// Durée imposée (`to`), en secondes, sinon celle des couches de l'effet
@@ -94,7 +94,7 @@ pub struct VisualCue {
     /// Secondes avant que l'effet commence
     pub delay: f32,
     /// Projectile suivi (ancre `projectile`)
-    pub projectile: Option<u64>,
+    pub projectile: Option<herocraft_common::ProjectileId>,
 }
 
 /// Un déplacement de compétence que la caméra du joueur local joue
@@ -131,11 +131,11 @@ pub struct SkillPlay {
     plays: Vec<Play>,
     cues: Vec<VisualCue>,
     /// Pièces greffées : sur qui (`None` : le joueur local), laquelle, jusqu'à quand
-    grafts: Vec<(Option<u64>, String, Instant)>,
+    grafts: Vec<(Option<herocraft_common::PlayerId>, String, Instant)>,
     /// Formes complètes (`SkillDef::form`) : sur qui, par quelle compétence, jusqu'à quand
-    forms: Vec<(Option<u64>, String, Instant)>,
+    forms: Vec<(Option<herocraft_common::PlayerId>, String, Instant)>,
     /// Lancements amplifiés par la Fusion, en attente de leur frappe : qui, quoi, jusqu'à quand
-    amplified: Vec<(Option<u64>, String, Instant)>,
+    amplified: Vec<(Option<herocraft_common::PlayerId>, String, Instant)>,
     /// Renforcements de vitesse du joueur local : de combien, jusqu'à quand
     speed_buffs: Vec<(f32, Instant, bool)>,
     /// Élan de la compétence locale qui commence : ruée, bond, bond de côté, en combien de secondes
@@ -143,15 +143,15 @@ pub struct SkillPlay {
     /// Déplacements du joueur local à jouer, et à partir de quand : la compétence et son déplacement
     moves: Vec<(Instant, String, Motion)>,
     /// Identifiant du joueur local (en ligne, celui du serveur)
-    pub me: u64,
+    pub me: herocraft_common::PlayerId,
     /// Dernier refus, à montrer au joueur
     pub last_refusal: Option<(String, Instant)>,
     /// Projectiles en vol, que le client fait voler entre deux nouvelles du serveur
-    live: HashMap<u64, LiveShot>,
+    live: HashMap<herocraft_common::ProjectileId, LiveShot>,
     /// Projectiles arrêtés dont les visuels doivent s'achever (`take_ended_projectiles`)
-    ended: Vec<u64>,
+    ended: Vec<herocraft_common::ProjectileId>,
     /// Qui a tiré chaque projectile en vol, et par quelle compétence
-    shooters: HashMap<u64, (herocraft_common::Shooter, String)>,
+    shooters: HashMap<herocraft_common::ProjectileId, (herocraft_common::Shooter, String)>,
 }
 
 impl Default for SkillPlay {
@@ -322,7 +322,7 @@ impl SkillPlay {
 
     /// Un tir à montrer : la traînée qui file de `from` à `to`, l'étincelle sur la bête touchée, et
     /// ce que fait la munition spéciale à l'impact (nuage de poison, explosion)
-    pub fn show_shot(&mut self, caster: Option<u64>, from: Vec3, to: Vec3, target: Option<u64>, special: Option<&str>, block: f32) {
+    pub fn show_shot(&mut self, caster: Option<herocraft_common::PlayerId>, from: Vec3, to: Vec3, target: Option<herocraft_common::CreatureId>, special: Option<&str>, block: f32) {
         let flight = (from.distance(to) / block / 60.0).clamp(0.05, 0.5);
         let base = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Aimed, caster, point: from, creature: None, projectile: None, aim: to - from, hold: Some(flight), area_blocks: 1.0, travel: Some((to, flight)), delay: 0.0 };
         self.cues.push(base.clone());
@@ -399,7 +399,7 @@ impl SkillPlay {
 
     /// Le geste commence, et les visuels `start` avec lui (et ceux de l'amplification, `amplified`)
     #[allow(clippy::too_many_arguments)]
-    fn start(&mut self, player: Option<u64>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant, amplified: bool) {
+    fn start(&mut self, player: Option<herocraft_common::PlayerId>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant, amplified: bool) {
         let catalog = skills();
         let Some(def) = catalog.get(skill) else { return };
         let Some(cast) = &def.cast else { return };
@@ -464,7 +464,7 @@ impl SkillPlay {
 
     /// Un joueur (peut-être nous) lance une compétence, d'après le serveur
     #[allow(clippy::too_many_arguments)]
-    pub fn on_cast(&mut self, player: u64, me: u64, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool) {
+    pub fn on_cast(&mut self, player: herocraft_common::PlayerId, me: herocraft_common::PlayerId, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool) {
         if player == me {
             // Notre geste a déjà commencé ; la recharge du serveur fait foi (celle de la Fusion pour un mélange)
             let catalog = skills();
@@ -618,13 +618,13 @@ impl SkillPlay {
     }
 
     /// Où est le projectile `id` en ce moment, d'après ce que le serveur en a dit
-    pub fn projectile_at(&self, id: u64) -> Option<Vec3> {
+    pub fn projectile_at(&self, id: herocraft_common::ProjectileId) -> Option<Vec3> {
         let l = self.live.get(&id)?;
         Some(l.at + l.velocity * Instant::now().duration_since(l.since).as_secs_f32())
     }
 
     /// Projectiles arrêtés depuis le dernier appel : leurs visuels s'achèvent
-    pub fn take_ended_projectiles(&mut self) -> Vec<u64> {
+    pub fn take_ended_projectiles(&mut self) -> Vec<herocraft_common::ProjectileId> {
         std::mem::take(&mut self.ended)
     }
 
@@ -766,21 +766,21 @@ impl SkillPlay {
 
     /// Le joueur solo a frappé la créature `id` de son arme : ses renforcements qui portent des
     /// effets (Marteau Consacré) les jouent autour d'elle
-    pub fn solo_weapon_hit(&mut self, id: u64, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
+    pub fn solo_weapon_hit(&mut self, id: herocraft_common::CreatureId, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
         let Some(at) = creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position) else { return };
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         self.runner.ride(SOLO_PLAYER, &[at], creatures, &mut player);
     }
 
     /// Facteur des dégâts d'un coup d'arme du joueur solo sur la créature `id` (renforcements de dégâts)
-    pub fn solo_hit_factor(&self, id: u64, creatures: &herocraft_world::CreatureWorld) -> f32 {
+    pub fn solo_hit_factor(&self, id: herocraft_common::CreatureId, creatures: &herocraft_world::CreatureWorld) -> f32 {
         self.runner.hit_factor(SOLO_PLAYER, id, creatures)
     }
 
     /// Le coup `damage` de la créature `attacker` arrive sur le joueur solo, qui regarde vers
     /// `facing` : sa garde le pare peut-être, et sa riposte se montre. Renvoie les dégâts qui
     /// passent, et si le coup a été paré.
-    pub fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: u64, damage: f32, kind: herocraft_common::DamageKind) -> (f32, bool) {
+    pub fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: herocraft_common::CreatureId, damage: f32, kind: herocraft_common::DamageKind) -> (f32, bool) {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         let parry = self.runner.parry(SOLO_PLAYER, Some(facing), attacker, damage, kind.name(), creatures, &mut player);
         if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) = parry.impact {
@@ -827,18 +827,18 @@ impl SkillPlay {
     }
 
     /// Espèce dont le héros du joueur `player` (`None` : le joueur local) a pris la forme
-    pub fn form_of(&mut self, player: Option<u64>) -> Option<String> {
+    pub fn form_of(&mut self, player: Option<herocraft_common::PlayerId>) -> Option<String> {
         self.form_skill(player).and_then(|s| skills().get(&s)).and_then(|d| d.form.clone())
     }
 
     /// Le joueur `player` (`None` : le joueur local) joue l'une des attaques de sa forme
-    pub fn form_attacking(&self, player: Option<u64>) -> bool {
+    pub fn form_attacking(&self, player: Option<herocraft_common::PlayerId>) -> bool {
         let now = Instant::now();
         self.plays.iter().any(|p| p.player == player && skills().form_of_attack(&p.skill).is_some() && now.duration_since(p.started).as_secs_f32() < p.duration)
     }
 
     /// La compétence de forme que le joueur `player` (`None` : le joueur local) a lancée, tant qu'elle dure
-    pub fn form_skill(&mut self, player: Option<u64>) -> Option<String> {
+    pub fn form_skill(&mut self, player: Option<herocraft_common::PlayerId>) -> Option<String> {
         let now = Instant::now();
         self.forms.retain(|(_, _, until)| *until > now);
         self.forms.iter().find(|(who, _, _)| *who == player).map(|(_, f, _)| f.clone())
@@ -849,7 +849,7 @@ impl SkillPlay {
     }
 
     /// Pièces greffées sur le héros du joueur `player` (`None` : le joueur local) en ce moment
-    pub fn grafts_of(&mut self, player: Option<u64>) -> Vec<String> {
+    pub fn grafts_of(&mut self, player: Option<herocraft_common::PlayerId>) -> Vec<String> {
         let now = Instant::now();
         self.grafts.retain(|(_, _, until)| *until > now);
         self.grafts.iter().filter(|(who, _, _)| *who == player).map(|(_, g, _)| g.clone()).collect()
@@ -860,7 +860,7 @@ impl SkillPlay {
     }
 
     /// La pose du héros du joueur `player` (`None` : le joueur local) : son geste en cours par-dessus la marche
-    pub fn pose_of(&self, player: Option<u64>, swing: f32, units_per_block: f32) -> FigurePose {
+    pub fn pose_of(&self, player: Option<herocraft_common::PlayerId>, swing: f32, units_per_block: f32) -> FigurePose {
         let now = Instant::now();
         let mut pose = FigurePose { swing, ..FigurePose::default() };
         let Some(play) = self.plays.iter().find(|p| p.player == player) else { return pose };
@@ -920,6 +920,7 @@ fn effect_seconds(effects: &[herocraft_common::skills::EffectEntry], rank: u8) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herocraft_common::PlayerId;
     use herocraft_common::{CreatureRegistry, PlayerClass};
     use std::sync::Arc;
 
@@ -953,7 +954,7 @@ mod tests {
         assert_eq!(play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None), Err(herocraft_common::CastError::NotInForm.message().to_string()));
         play.request("forestWolf", &mut stats, Vec3::NEG_Y, None, None).unwrap();
         assert_eq!(play.form_of(None).as_deref(), Some("forestWolf"));
-        assert_eq!(play.form_of(Some(7)), None);
+        assert_eq!(play.form_of(Some(PlayerId(7))), None);
         play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None).unwrap();
         assert!(play.form_attacking(None));
         play.request("wolfPounce", &mut stats, Vec3::NEG_Y, None, None).unwrap();

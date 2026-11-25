@@ -53,7 +53,7 @@ pub enum ClientPacket {
     },
     /// Le joueur frappe une créature (dégâts, recul et fuite décidés par le serveur)
     HitCreature {
-        creature_id: u64,
+        creature_id: crate::CreatureId,
     },
     /// Le joueur commence à tenir chargé un tir d'arc (`skill` : `None`) ou une compétence qui se
     /// charge (`Cast::charge`) : le serveur compte le temps jusqu'au tir ou au lancement
@@ -70,18 +70,18 @@ pub enum ClientPacket {
     /// Le joueur donne à manger à une créature l'objet `item` (numéro d'`ItemId`), déjà retiré de son
     /// inventaire : le serveur l'apprivoise, la rend amoureuse ou fait grandir le petit
     FeedCreature {
-        creature_id: u64,
+        creature_id: crate::CreatureId,
         item: u16,
     },
     /// Le joueur parle à un habitant sans rien à échanger (clic droit) : le serveur choisit sa
     /// réplique et l'envoie aux joueurs qui l'entendent (`ServerPacket::VillagerSays`)
     TalkToVillager {
-        creature_id: u64,
+        creature_id: crate::CreatureId,
     },
     /// Le joueur dépèce une bête morte à sa portée, couteau ou dague en main : le serveur tire son
     /// butin (`ServerPacket::CreatureLoot`) et la retire
     SkinCreature {
-        creature_id: u64,
+        creature_id: crate::CreatureId,
     },
     /// Le joueur investit un point dans une compétence de la roue (le serveur vérifie points et
     /// prérequis, puis renvoie ses statistiques)
@@ -147,7 +147,7 @@ pub enum BlockInteractionAction {
 /// État d'un joueur tel que les autres le voient
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PlayerState {
-    pub player_id: u64,
+    pub player_id: crate::PlayerId,
     pub position: Vec3,
     pub yaw: f32,
     pub pitch: f32,
@@ -159,7 +159,7 @@ pub enum ServerPacket {
     /// Acceptation de la connexion. Suivie des `edited_chunks` chunks modifiés du monde
     /// (`ChunkData`), puis des joueurs déjà en ligne (`PlayerJoined`).
     ConnectAck {
-        player_id: u64,
+        player_id: crate::PlayerId,
         /// Graine de la planète : le client génère le même terrain que le serveur
         world_seed: u64,
         /// Dernière position connue du joueur sur ce serveur, ou `None` pour un premier passage
@@ -179,18 +179,18 @@ pub enum ServerPacket {
     },
     /// Un joueur est en ligne (à la connexion : un message par joueur déjà présent)
     PlayerJoined {
-        player_id: u64,
+        player_id: crate::PlayerId,
         name: String,
     },
     /// Allure d'un joueur (sa légende vérifiée), pour dessiner son héros : à chaque baptême, et à
     /// la connexion pour les joueurs déjà présents
     PlayerAppearance {
-        player_id: u64,
+        player_id: crate::PlayerId,
         appearance: Box<crate::hero::Appearance>,
     },
     /// Un joueur a quitté la partie
     PlayerLeft {
-        player_id: u64,
+        player_id: crate::PlayerId,
     },
     /// Positions des autres joueurs, envoyées à intervalle régulier
     PlayerStates(Vec<PlayerState>),
@@ -203,11 +203,11 @@ pub enum ServerPacket {
     /// Fiche de l'habitant ou du voyageur qu'incarne une créature humanoïde, envoyée juste avant
     /// son `CreatureSpawned`
     VillagerCard {
-        creature_id: u64,
+        creature_id: crate::CreatureId,
         card: Box<crate::villager::VillagerCard>,
     },
     /// Créatures sorties du voisinage du joueur, ou disparues
-    CreaturesDespawned(Vec<u64>),
+    CreaturesDespawned(Vec<crate::CreatureId>),
     /// Positions des créatures du voisinage, envoyées à intervalle régulier
     CreatureStates(Vec<CreatureState>),
     /// Tirs de créatures (tourelles, bastion, liche) partis à l'instant, pour les montrer
@@ -254,7 +254,7 @@ pub enum ServerPacket {
     /// Un joueur lance une compétence (envoyé à tous, lanceur compris : son client a déjà commencé
     /// le geste et ne le rejoue pas)
     SkillCast {
-        player_id: u64,
+        player_id: crate::PlayerId,
         /// La compétence vraiment lancée : le mélange, pour la Fusion
         skill: String,
         rank: u8,
@@ -267,10 +267,10 @@ pub enum ServerPacket {
     /// Un joueur a tiré à l'arc ou à l'arbalète (envoyé à tous, tireur compris) : d'où, jusqu'où,
     /// la bête touchée, la munition spéciale qu'il portait (compétence qui l'a chargée)
     PlayerShot {
-        player_id: u64,
+        player_id: crate::PlayerId,
         from: Vec3,
         to: Vec3,
-        target: Option<u64>,
+        target: Option<crate::CreatureId>,
         special: Option<String>,
     },
     /// Le lancement de `skill` est refusé (`reason` : pourquoi, en clair) ; le client arrête le geste
@@ -283,12 +283,12 @@ pub enum ServerPacket {
     SkillMove(crate::skills::SkillMove),
     /// La compétence frappe : centre de sa zone et cibles touchées, pour leurs effets visuels
     SkillHit {
-        player_id: u64,
+        player_id: crate::PlayerId,
         skill: String,
         rank: u8,
         center: Vec3,
-        creatures: Vec<u64>,
-        players: Vec<u64>,
+        creatures: Vec<crate::CreatureId>,
+        players: Vec<crate::PlayerId>,
         /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
         contact: bool,
         /// La riposte d'une garde qui vient de parer un coup

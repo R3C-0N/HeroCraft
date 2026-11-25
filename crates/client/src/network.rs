@@ -300,7 +300,7 @@ pub struct RemoteCreature {
     pub scale: f32,
     pub mood: u8,
     /// Invocateur et allure copiée (`CreatureState::summoner`, `copy`)
-    pub summoner: Option<u64>,
+    pub summoner: Option<herocraft_common::PlayerId>,
     pub copy: Option<u32>,
     track: Track,
     /// Derniers coups, morts et actions reçus, avec leur instant, pour les montrer au rythme des
@@ -352,15 +352,15 @@ pub enum NetEvent {
     /// Horloge du ciel du serveur et temps imposé, qui font foi
     Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
     /// Un joueur (peut-être nous) lance une compétence
-    SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
+    SkillCast { player_id: herocraft_common::PlayerId, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
     /// Un joueur (peut-être nous) a tiré à l'arc ou à l'arbalète
-    PlayerShot { player_id: u64, from: Vec3, to: Vec3, target: Option<u64>, special: Option<String> },
+    PlayerShot { player_id: herocraft_common::PlayerId, from: Vec3, to: Vec3, target: Option<herocraft_common::CreatureId>, special: Option<String> },
     /// Le serveur refuse notre lancement de `skill`
     SkillRefused { skill: String, reason: String },
     /// Une compétence nous déplace (téléportation, traction vers sa cible)
     SkillMove(herocraft_common::skills::SkillMove),
     /// Une compétence frappe : centre de sa zone et cibles touchées
-    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64>, parried: bool, contact: bool },
+    SkillHit { player_id: herocraft_common::PlayerId, skill: String, rank: u8, center: Vec3, creatures: Vec<herocraft_common::CreatureId>, players: Vec<herocraft_common::PlayerId>, parried: bool, contact: bool },
     /// Notre parade ratée : la recharge de `skill` dure `seconds` de plus
     SkillCooldown { skill: String, seconds: f32 },
     /// Le coup d'une bête nous repousse
@@ -377,11 +377,11 @@ pub enum NetEvent {
 
 pub struct NetClient {
     connection: ServerConnection,
-    player_id: u64,
-    players: HashMap<u64, RemotePlayer>,
-    creatures: HashMap<u64, RemoteCreature>,
+    player_id: herocraft_common::PlayerId,
+    players: HashMap<herocraft_common::PlayerId, RemotePlayer>,
+    creatures: HashMap<herocraft_common::CreatureId, RemoteCreature>,
     /// Fiches des habitants et des voyageurs du voisinage, par créature
-    villager_cards: HashMap<u64, std::sync::Arc<herocraft_common::VillagerCard>>,
+    villager_cards: HashMap<herocraft_common::CreatureId, std::sync::Arc<herocraft_common::VillagerCard>>,
     last_move_sent: Option<Instant>,
     last_move: Option<(Vec3, f32, f32, bool, bool, Option<u16>)>,
     /// Dernières pièces portées envoyées au serveur
@@ -422,7 +422,7 @@ impl NetClient {
     }
 
     /// Donne à manger à une créature (l'objet est déjà retiré de l'inventaire)
-    pub fn send_feed_creature(&mut self, creature_id: u64, item: herocraft_common::ItemId) {
+    pub fn send_feed_creature(&mut self, creature_id: herocraft_common::CreatureId, item: herocraft_common::ItemId) {
         self.connection.send(&ClientPacket::FeedCreature { creature_id, item: item.0 });
     }
 
@@ -434,22 +434,22 @@ impl NetClient {
 
     /// Parle à l'habitant `creature_id` (sans rien à échanger) : le serveur renvoie sa réplique à tous
     /// les joueurs proches de lui
-    pub fn send_talk_to_villager(&mut self, creature_id: u64) {
+    pub fn send_talk_to_villager(&mut self, creature_id: herocraft_common::CreatureId) {
         self.connection.send(&ClientPacket::TalkToVillager { creature_id });
     }
 
     /// Signale au serveur un coup porté à une créature
-    pub fn send_hit_creature(&mut self, creature_id: u64) {
+    pub fn send_hit_creature(&mut self, creature_id: herocraft_common::CreatureId) {
         self.connection.send(&ClientPacket::HitCreature { creature_id });
     }
 
     /// Dépèce la bête morte `creature_id` (le serveur renvoie son butin)
-    pub fn send_skin_creature(&mut self, creature_id: u64) {
+    pub fn send_skin_creature(&mut self, creature_id: herocraft_common::CreatureId) {
         self.connection.send(&ClientPacket::SkinCreature { creature_id });
     }
 
     /// Notre identifiant de joueur sur le serveur
-    pub fn player_id(&self) -> u64 {
+    pub fn player_id(&self) -> herocraft_common::PlayerId {
         self.player_id
     }
 
@@ -675,7 +675,7 @@ impl NetClient {
 
     /// Boîtes (8 coins, dans l'ordre de `BlockGeometry::block_corners`) des autres joueurs visibles
     /// Pieds affichés d'un autre joueur
-    pub fn remote_player_feet(&self, id: u64) -> Option<Vec3> {
+    pub fn remote_player_feet(&self, id: herocraft_common::PlayerId) -> Option<Vec3> {
         self.players.get(&id).and_then(|p| p.position)
     }
 
@@ -692,12 +692,12 @@ impl NetClient {
     }
 
     /// Allure du héros d'un autre joueur, si le serveur l'a envoyée
-    pub fn remote_appearance(&self, id: u64) -> Option<&herocraft_common::hero::Appearance> {
+    pub fn remote_appearance(&self, id: herocraft_common::PlayerId) -> Option<&herocraft_common::hero::Appearance> {
         self.players.get(&id).and_then(|p| p.appearance.as_ref())
     }
 
     /// Héros des autres joueurs à dessiner : identifiant, pieds, cap, allure
-    pub fn remote_heroes(&self) -> Vec<(u64, Vec3, f32, &herocraft_common::hero::Appearance)> {
+    pub fn remote_heroes(&self) -> Vec<(herocraft_common::PlayerId, Vec3, f32, &herocraft_common::hero::Appearance)> {
         self.players
             .iter()
             .filter_map(|(&id, p)| Some((id, p.position?, p.yaw, p.appearance.as_ref()?)))
@@ -707,7 +707,7 @@ impl NetClient {
 
     /// Créatures du voisinage à dessiner, leur espèce cherchée dans `registry`
     /// Fiche de l'habitant ou du voyageur qu'incarne la créature `id`
-    pub fn villager_card(&self, id: u64) -> Option<&std::sync::Arc<herocraft_common::VillagerCard>> {
+    pub fn villager_card(&self, id: herocraft_common::CreatureId) -> Option<&std::sync::Arc<herocraft_common::VillagerCard>> {
         self.villager_cards.get(&id)
     }
 

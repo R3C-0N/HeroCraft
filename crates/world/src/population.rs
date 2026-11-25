@@ -66,7 +66,7 @@ fn splitmix(mut x: u64) -> u64 {
 /// Une bête endormie : de quoi la remettre exactement où elle était
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SleepingCreature {
-    pub id: u64,
+    pub id: herocraft_common::CreatureId,
     /// Identifiant de son espèce (nom du fichier, ex. `vache`)
     pub species: String,
     /// Troupeau auquel elle appartient (absent des anciennes sauvegardes : elle forme le sien)
@@ -121,6 +121,7 @@ impl PopulationSave {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herocraft_common::CreatureId;
 
     #[test]
     fn zone_indices_are_unique_and_seeds_differ() {
@@ -140,7 +141,7 @@ mod tests {
         let zone = ZoneKey { face: PlanetFace::NegY, x: 3, z: 9 };
         let save = PopulationSave {
             next_id: 42,
-            zones: vec![(zone, vec![SleepingCreature { id: 7, species: "vache".into(), herd: Some(7), position: Vec3::new(1.0, 2.0, 3.0), yaw: 0.5, health: 4.0, tamed: true, age: Some(12.0) }])],
+            zones: vec![(zone, vec![SleepingCreature { id: CreatureId(7), species: "vache".into(), herd: Some(7), position: Vec3::new(1.0, 2.0, 3.0), yaw: 0.5, health: 4.0, tamed: true, age: Some(12.0) }])],
         };
         save.save(&path).unwrap();
         let back = PopulationSave::load(&path).unwrap().unwrap();

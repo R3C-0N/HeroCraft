@@ -39,7 +39,7 @@ fn stranger() -> &'static Appearance {
 /// La marche et les gestes de chaque humanoïde
 #[derive(Default)]
 pub struct VillagerAnimator {
-    gaits: HashMap<u64, HeroGait>,
+    gaits: HashMap<herocraft_common::CreatureId, HeroGait>,
     /// Corps de chaque apparence (selon sa planche), et l'instant où il a servi
     figures: HashMap<String, (Figure, f32)>,
     time: f32,
@@ -83,7 +83,7 @@ impl VillagerAnimator {
     fn pose(&self, view: &CreatureView, registry: &CreatureRegistry) -> FigurePose {
         let swing = self.gaits.get(&view.id).map_or(0.0, |g| g.swing());
         // Chacun à son rythme, pour que deux voisins ne gesticulent pas ensemble
-        let t = self.time + (view.id % 97) as f32 * 0.37;
+        let t = self.time + (view.id.0 % 97) as f32 * 0.37;
         let hurt = view.hurt.clamp(0.0, 1.0);
         let tint = [0, 1, 2].map(|i| 1.0 + (HURT_TINT[i] - 1.0) * hurt);
         let mut pose = FigurePose { swing, tint, ..FigurePose::default() };
@@ -114,8 +114,8 @@ pub fn push_villagers(
     frame: &mut CreatureFrame,
     views: &[CreatureView],
     registry: &CreatureRegistry,
-    card: impl Fn(u64) -> Option<Arc<VillagerCard>>,
-    hero_of: &dyn Fn(u64) -> Option<Appearance>,
+    card: impl Fn(herocraft_common::CreatureId) -> Option<Arc<VillagerCard>>,
+    hero_of: &dyn Fn(herocraft_common::PlayerId) -> Option<Appearance>,
     animator: &mut VillagerAnimator,
     mut texture: impl FnMut(SheetSource) -> usize,
     block: f32,
@@ -151,7 +151,7 @@ pub fn push_villagers(
 
 /// Nom et métier de l'humanoïde visé (`looked_at`, qu'aucun bloc ne cache), à l'écran
 /// (position, texte)
-pub fn name_tags(views: &[CreatureView], card: impl Fn(u64) -> Option<Arc<VillagerCard>>, looked_at: Option<u64>, camera: &OrbitCamera, width: f32, height: f32) -> Vec<(egui::Pos2, String)> {
+pub fn name_tags(views: &[CreatureView], card: impl Fn(herocraft_common::CreatureId) -> Option<Arc<VillagerCard>>, looked_at: Option<herocraft_common::CreatureId>, camera: &OrbitCamera, width: f32, height: f32) -> Vec<(egui::Pos2, String)> {
     let Some(looked_at) = looked_at.filter(|_| camera.view_mode() != CameraViewMode::SatelliteOrbit) else {
         return Vec::new();
     };
@@ -182,13 +182,14 @@ pub fn name_tags(views: &[CreatureView], card: impl Fn(u64) -> Option<Arc<Villag
 }
 
 /// Pieds d'un humanoïde, pour savoir s'il est à portée de parole
-pub fn feet_of(views: &[CreatureView], id: u64) -> Option<Vec3> {
+pub fn feet_of(views: &[CreatureView], id: herocraft_common::CreatureId) -> Option<Vec3> {
     views.iter().find(|v| v.id == id).map(|v| v.feet)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herocraft_common::{CreatureId};
     use crate::hero_model::Bone;
 
     #[test]
@@ -197,7 +198,7 @@ mod tests {
         let mut animator = VillagerAnimator::default();
         for (k, id) in ["deathKnight", "lichLord"].into_iter().enumerate() {
             let species = registry.find(id).unwrap_or_else(|| panic!("{id}"));
-            let view = CreatureView { id: k as u64, species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
+            let view = CreatureView { id: herocraft_common::CreatureId(k as u64), species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
             let mut frame = CreatureFrame::default();
             let mut asked = Vec::new();
             push_villagers(&mut frame, &[view], &registry, |_| None, &|_| None, &mut animator, |source| {
@@ -219,7 +220,7 @@ mod tests {
         let species = registry.find("villageois").unwrap();
         let s = registry.get(species).unwrap();
         let pause = |name: &str| CreatureAction::Pause(s.pauses().position(|(n, _)| n == name).unwrap() as u8);
-        let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
+        let view = |action| CreatureView { id: CreatureId(1), species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
         let mut animator = VillagerAnimator::default();
         assert!(is_humanoid(&view(CreatureAction::Repos), &registry));
         let still = animator.pose(&view(CreatureAction::Repos), &registry);

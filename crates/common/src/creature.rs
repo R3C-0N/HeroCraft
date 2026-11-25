@@ -522,7 +522,7 @@ impl CreatureShot {
 /// Un tir de créature, pour le montrer aux joueurs
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CreatureShotEvent {
-    pub creature_id: u64,
+    pub creature_id: crate::CreatureId,
     /// Rang de l'espèce du tireur dans le registre
     pub species: u32,
     /// Bouche du tir et point d'arrivée
@@ -917,7 +917,7 @@ impl CreatureSpecies {
 /// Position d'une créature telle que les joueurs la voient
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CreatureState {
-    pub creature_id: u64,
+    pub creature_id: crate::CreatureId,
     /// Pieds (repère du centre de la planète)
     pub position: Vec3,
     /// Cap dans le plan tangent (0 = nord, π/2 = est, comme `tangent_frame`)
@@ -933,7 +933,7 @@ pub struct CreatureState {
     /// Humeur d'élevage, en bits `MOOD_*`
     pub mood: u8,
     /// Joueur qui l'a invoquée (compétence)
-    pub summoner: Option<u64>,
+    pub summoner: Option<crate::PlayerId>,
     /// Copie d'une autre allure : celle de son invocateur (`COPY_SUMMONER`) ou celle d'une espèce
     /// (son rang dans le registre), teinte comprise
     pub copy: Option<u32>,
@@ -1053,9 +1053,9 @@ mod tests {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Shooter {
     /// Une créature : identifiant, rang de son espèce dans le registre
-    Creature { id: u64, species: u32 },
+    Creature { id: crate::CreatureId, species: u32 },
     /// Un joueur, par une compétence
-    Player(u64),
+    Player(crate::PlayerId),
 }
 
 /// Pourquoi un projectile s'arrête
@@ -1076,7 +1076,7 @@ pub enum ProjectileEnd {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ProjectileEvent {
     Launch {
-        id: u64,
+        id: crate::ProjectileId,
         shooter: Shooter,
         /// La compétence, pour un tir de joueur (vide sinon)
         skill: String,
@@ -1085,12 +1085,12 @@ pub enum ProjectileEvent {
         velocity: Vec3,
     },
     /// Il rebondit, est dévié ou corrige sa course vers sa cible
-    Turn { id: u64, at: Vec3, velocity: Vec3 },
-    End { id: u64, at: Vec3, reason: ProjectileEnd },
+    Turn { id: crate::ProjectileId, at: Vec3, velocity: Vec3 },
+    End { id: crate::ProjectileId, at: Vec3, reason: ProjectileEnd },
 }
 
 impl ProjectileEvent {
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> crate::ProjectileId {
         match self {
             Self::Launch { id, .. } | Self::Turn { id, .. } | Self::End { id, .. } => *id,
         }
