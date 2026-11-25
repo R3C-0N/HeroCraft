@@ -6,6 +6,7 @@
 //! animations de rotation, translation et échelle des os. Chaque sommet suit les quatre os que lui
 //! donnent ses poids.
 
+use anyhow::Context;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -69,35 +70,30 @@ pub struct SkinnedModel {
     pub feet_height: f32,
 }
 
-/// Texture RGBA 8 bits
-#[derive(Debug, Clone)]
-pub struct Texture {
-    pub width: u32,
-    pub height: u32,
-    pub rgba: Vec<u8>,
-}
+/// Texture RGBA 8 bits, partagée avec les textures des blocs
+pub use herocraft_meshing::texture::Texture;
 
 impl SkinnedModel {
-    pub fn load(path: &Path) -> Result<Self, String> {
-        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    pub fn load(path: &Path) -> anyhow::Result<Self> {
+        let text = std::fs::read_to_string(path)?;
         Self::parse(&text)
     }
 
-    pub fn parse(json: &str) -> Result<Self, String> {
-        let gltf: Gltf = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    pub fn parse(json: &str) -> anyhow::Result<Self> {
+        let gltf: Gltf = serde_json::from_str(json)?;
         let buffers = gltf
             .buffers
             .iter()
             .map(|b| {
-                let data = b.uri.as_deref().and_then(|uri| uri.split_once(";base64,")).map(|(_, data)| data).ok_or("seuls les tampons embarqués en base64 sont lus")?;
-                base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| format!("tampon illisible : {e}"))
+                let data = b.uri.as_deref().and_then(|uri| uri.split_once(";base64,")).map(|(_, data)| data).context("seuls les tampons embarqués en base64 sont lus")?;
+                base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| anyhow::anyhow!("tampon illisible : {e}"))
             })
-            .collect::<Result<Vec<_>, String>>()?;
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let reader = Reader { gltf: &gltf, buffers: &buffers };
 
-        let mesh = gltf.meshes.first().ok_or("aucun maillage")?;
-        let primitive = mesh.primitives.first().ok_or("maillage vide")?;
-        let attribute = |name: &str| primitive.attributes.get(name).copied().ok_or(format!("attribut {name} manquant"));
+        let mesh = gltf.meshes.first().context("aucun maillage")?;
+        let primitive = mesh.primitives.first().context("maillage vide")?;
+        let attribute = |name: &str| primitive.attributes.get(name).copied().with_context(|| format!("attribut {name} manquant"));
         let positions = reader.floats(attribute("POSITION")?, 3)?;
         let normals = reader.floats(attribute("NORMAL")?, 3)?;
         let uvs = reader.floats(attribute("TEXCOORD_0")?, 2)?;
@@ -105,7 +101,7 @@ impl SkinnedModel {
         let weights = reader.floats(attribute("WEIGHTS_0")?, 4)?;
         let count = positions.len() / 3;
         if [normals.len() / 3, uvs.len() / 2, joints.len() / 4, weights.len() / 4].iter().any(|&n| n != count) {
-            return Err("attributs de tailles différentes".into());
+            anyhow::bail!("attributs de tailles différentes");
         }
         let vertices = (0..count)
             .map(|i| ModelVertex {
@@ -121,7 +117,7 @@ impl SkinnedModel {
             None => (0..count as u32).collect(),
         };
         if indices.iter().any(|&i| i as usize >= count) {
-            return Err("indice hors du maillage".into());
+            anyhow::bail!("indice hors du maillage");
         }
 
         let mut nodes: Vec<Node> = gltf
@@ -137,27 +133,27 @@ impl SkinnedModel {
             .collect();
         for (i, n) in gltf.nodes.iter().enumerate() {
             for &child in &n.children {
-                nodes.get_mut(child).ok_or("nœud enfant inconnu")?.parent = Some(i);
+                nodes.get_mut(child).context("nœud enfant inconnu")?.parent = Some(i);
             }
         }
 
-        let skin = gltf.skins.first().ok_or("aucun squelette")?;
+        let skin = gltf.skins.first().context("aucun squelette")?;
         if skin.joints.iter().any(|&j| j >= nodes.len()) {
-            return Err("os inconnu".into());
+            anyhow::bail!("os inconnu");
         }
         let inverse_bind = match skin.inverse_bind_matrices {
             Some(accessor) => reader.floats(accessor, 16)?.chunks(16).map(Mat4::from_cols_slice).collect(),
             None => vec![Mat4::IDENTITY; skin.joints.len()],
         };
         if inverse_bind.len() != skin.joints.len() || vertices.iter().any(|v| v.joints.iter().any(|&j| j as usize >= skin.joints.len())) {
-            return Err("squelette incohérent".into());
+            anyhow::bail!("squelette incohérent");
         }
 
         let mut animations = HashMap::new();
         for (index, animation) in gltf.animations.iter().enumerate() {
             let mut channels = Vec::new();
             for channel in &animation.channels {
-                let sampler = animation.samplers.get(channel.sampler).ok_or("échantillonneur inconnu")?;
+                let sampler = animation.samplers.get(channel.sampler).context("échantillonneur inconnu")?;
                 let (path, width) = match channel.target.path.as_str() {
                     "translation" => (Property::Translation, 3),
                     "rotation" => (Property::Rotation, 4),
@@ -168,7 +164,7 @@ impl SkinnedModel {
                 let times = reader.floats(sampler.input, 1)?;
                 let values = reader.floats(sampler.output, width)?;
                 if times.is_empty() || values.len() != times.len() * width {
-                    return Err("canal d'animation incohérent".into());
+                    anyhow::bail!("canal d'animation incohérent");
                 }
                 channels.push(Channel { node, path, times, values, step: sampler.interpolation.as_deref() == Some("STEP") });
             }
@@ -298,24 +294,6 @@ impl Channel {
     }
 }
 
-impl Texture {
-    pub fn load(path: &Path) -> Result<Self, String> {
-        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-        let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
-        decoder.set_transformations(png::Transformations::normalize_to_color8() | png::Transformations::ALPHA);
-        let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-        let mut buffer = vec![0; reader.output_buffer_size()];
-        let info = reader.next_frame(&mut buffer).map_err(|e| e.to_string())?;
-        buffer.truncate(info.buffer_size());
-        let rgba = match info.color_type {
-            png::ColorType::Rgba => buffer,
-            png::ColorType::GrayscaleAlpha => buffer.chunks(2).flat_map(|c| [c[0], c[0], c[0], c[1]]).collect(),
-            other => return Err(format!("format de PNG non pris en charge : {other:?}")),
-        };
-        Ok(Self { width: info.width, height: info.height, rgba })
-    }
-}
-
 // --- Lecture du glTF ---
 
 #[derive(Deserialize)]
@@ -424,35 +402,35 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     /// Octets de chaque élément de l'accesseur (`width` composantes de `size` octets)
-    fn elements(&self, accessor: usize, width: usize, size: usize) -> Result<(Vec<&[u8]>, u32), String> {
-        let a = self.gltf.accessors.get(accessor).ok_or("accesseur inconnu")?;
-        let view = self.gltf.buffer_views.get(a.buffer_view).ok_or("vue de tampon inconnue")?;
-        let buffer = self.buffers.get(view.buffer).ok_or("tampon inconnu")?;
+    fn elements(&self, accessor: usize, width: usize, size: usize) -> anyhow::Result<(Vec<&[u8]>, u32)> {
+        let a = self.gltf.accessors.get(accessor).context("accesseur inconnu")?;
+        let view = self.gltf.buffer_views.get(a.buffer_view).context("vue de tampon inconnue")?;
+        let buffer = self.buffers.get(view.buffer).context("tampon inconnu")?;
         let element = width * size;
         let stride = view.byte_stride.unwrap_or(element);
         let start = view.byte_offset + a.byte_offset;
         let end = view.byte_offset + view.byte_length;
         if a.count > 0 && (start + stride * (a.count - 1) + element > end || end > buffer.len()) {
-            return Err("accesseur hors de son tampon".into());
+            anyhow::bail!("accesseur hors de son tampon");
         }
         Ok(((0..a.count).map(|i| &buffer[start + i * stride..start + i * stride + element]).collect(), a.component_type))
     }
 
-    fn floats(&self, accessor: usize, width: usize) -> Result<Vec<f32>, String> {
+    fn floats(&self, accessor: usize, width: usize) -> anyhow::Result<Vec<f32>> {
         let (elements, kind) = self.elements(accessor, width, 4)?;
         if kind != 5126 {
-            return Err(format!("flottants attendus (type {kind})"));
+            anyhow::bail!("flottants attendus (type {kind})");
         }
         Ok(elements.iter().flat_map(|e| e.chunks(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))).collect())
     }
 
-    fn integers(&self, accessor: usize, width: usize) -> Result<Vec<u32>, String> {
-        let kind = self.gltf.accessors.get(accessor).ok_or("accesseur inconnu")?.component_type;
+    fn integers(&self, accessor: usize, width: usize) -> anyhow::Result<Vec<u32>> {
+        let kind = self.gltf.accessors.get(accessor).context("accesseur inconnu")?.component_type;
         let size = match kind {
             5121 => 1,
             5123 => 2,
             5125 => 4,
-            _ => return Err(format!("entiers attendus (type {kind})")),
+            _ => anyhow::bail!("entiers attendus (type {kind})"),
         };
         let (elements, _) = self.elements(accessor, width, size)?;
         Ok(elements

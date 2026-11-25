@@ -223,7 +223,7 @@ impl CreatureModels {
                 continue;
             }
             let model = SkinnedModel::load(&registry.asset_path(&species.model.mesh));
-            let texture = Texture::load(&registry.asset_path(&species.model.texture));
+            let texture = Texture::load(&registry.asset_path(&species.model.texture)).map_err(anyhow::Error::msg);
             match (model, texture) {
                 (Ok(model), Ok(texture)) => {
                     let (rig, missing) = Rig::new(model, species);

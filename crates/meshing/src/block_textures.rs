@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 use herocraft_common::{blocks, items, BlockId, ItemId};
 
-use crate::skinned_model::Texture;
+use crate::texture::Texture;
 
 /// Côté d'une texture de bloc, en texels
 pub const TEXTURE_SIZE: u32 = 16;

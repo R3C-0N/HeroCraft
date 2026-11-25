@@ -5,6 +5,7 @@
 //! testant la profondeur sans l'écrire. Une couche qui luit (`glow` > 1) s'ajoute à la lumière
 //! de la scène ; une couche mate (poussière, fumée) se pose dessus comme un voile.
 
+use anyhow::Context;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
@@ -197,14 +198,14 @@ pub struct EffectDef {
 }
 
 impl EffectDef {
-    fn parse(json: &str) -> Result<Self, String> {
+    fn parse(json: &str) -> anyhow::Result<Self> {
         #[derive(Deserialize)]
         struct File {
             #[serde(default)]
             unit: Option<String>,
             layers: Vec<serde_json::Map<String, Value>>,
         }
-        let file: File = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let file: File = serde_json::from_str(json)?;
         let mut layers = Vec::new();
         for l in file.layers {
             let num = |k: &str, d: f32| l.get(k).and_then(Value::as_f64).map_or(d, |v| v as f32);
@@ -248,7 +249,7 @@ impl EffectDef {
                 };
                 (LayerKind::Particles(layer), p.clone())
             } else {
-                let shape = match l.get("shape").and_then(Value::as_str).ok_or("couche sans shape ni particles")? {
+                let shape = match l.get("shape").and_then(Value::as_str).context("couche sans shape ni particles")? {
                     "ring" => Shape::Ring,
                     "disc" => Shape::Disc,
                     "arc" => Shape::Arc,
@@ -257,7 +258,7 @@ impl EffectDef {
                     "column" => Shape::Column,
                     "sprite" => Shape::Sprite,
                     "trail" => Shape::Trail,
-                    other => return Err(format!("forme inconnue {other}")),
+                    other => anyhow::bail!("forme inconnue {other}"),
                 };
                 let layer = ShapeLayer {
                     shape,
@@ -339,7 +340,7 @@ impl EffectLibrary {
                 continue;
             }
             let name = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
-            match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| EffectDef::parse(&t)) {
+            match std::fs::read_to_string(&path).map_err(anyhow::Error::from).and_then(|t| EffectDef::parse(&t)) {
                 Ok(def) => {
                     effects.insert(name, def);
                 }

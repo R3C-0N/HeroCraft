@@ -10,14 +10,14 @@ use winit::{
     window::{CursorGrabMode, Window, WindowBuilder},
 };
 
+// Maillage du terrain : crate à part, mesurable avec `cargo bench -p herocraft_meshing`
+use herocraft_meshing::{block_light, block_textures, planet_mesh, voxel_mesh};
 mod atmosphere;
 mod audio;
 mod benchmark;
 mod block_cracks;
 mod block_interaction;
-mod block_light;
 mod block_outline;
-mod block_textures;
 mod camera;
 mod chat;
 mod paper_cards;
@@ -41,7 +41,6 @@ mod keyboard_hook;
 mod lod;
 mod monitor;
 mod network;
-mod planet_mesh;
 mod player_stats;
 mod post;
 mod precipitation;
@@ -64,7 +63,6 @@ mod vision_assault;
 mod vision_charge;
 mod vision_tutorial;
 mod void_stones;
-mod voxel_mesh;
 mod weather;
 mod world_map;
 
@@ -1749,8 +1747,8 @@ fn main() {
                                             hosted = Some(host);
                                         }
                                         Err(e) => {
-                                            warn!("{}", e);
-                                            ui_state.multiplayer.notice = Some(e);
+                                            warn!("{e:#}");
+                                            ui_state.multiplayer.notice = Some(format!("{e:#}"));
                                         }
                                     }
                                 }
@@ -3012,7 +3010,7 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
             Ok(vec![format!("Cinematics: {}", ids.join(", "))])
         }
         Command::Cinematic(Some(id)) => {
-            game.cinematics.player.play(&id)?;
+            game.cinematics.player.play(&id).map_err(|e| e.to_string())?;
             Ok(Vec::new())
         }
         Command::Event(text) => {

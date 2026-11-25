@@ -106,17 +106,28 @@ fn one() -> u8 {
     1
 }
 
+/// Bloc `weapon` d'une fiche d'objet qui ne tient pas debout
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum WeaponError {
+    #[error("weapon.interval de 0 à 5 secondes")]
+    Interval,
+    #[error("weapon.ammo pour un arc ou une arbalète, et pour eux seuls")]
+    Ammo,
+    #[error("weapon.magazine à partir de 1, weapon.reach de 0 à 4")]
+    MagazineOrReach,
+}
+
 impl WeaponSheet {
     /// Ce qui cloche dans le bloc
-    pub fn check(&self) -> Result<(), String> {
+    pub fn check(&self) -> Result<(), WeaponError> {
         if !(self.interval > 0.0 && self.interval <= 5.0) {
-            return Err("weapon.interval de 0 à 5 secondes".into());
+            return Err(WeaponError::Interval);
         }
         if self.kind.is_ranged() != self.ammo.is_some() {
-            return Err("weapon.ammo pour un arc ou une arbalète, et pour eux seuls".into());
+            return Err(WeaponError::Ammo);
         }
         if self.magazine == 0 || !(0.0..=4.0).contains(&self.reach) {
-            return Err("weapon.magazine à partir de 1, weapon.reach de 0 à 4".into());
+            return Err(WeaponError::MagazineOrReach);
         }
         Ok(())
     }
@@ -239,9 +250,9 @@ mod tests {
     fn invalid_weapon_blocks_are_explained() {
         let parse = |w: &str| serde_json::from_str::<WeaponSheet>(w).unwrap().check();
         assert!(parse(r#"{"kind":"sword","interval":0.4}"#).is_ok());
-        assert!(parse(r#"{"kind":"sword","interval":0}"#).is_err());
-        assert!(parse(r#"{"kind":"bow","interval":0.3}"#).is_err(), "un arc sans munition");
-        assert!(parse(r#"{"kind":"sword","interval":0.4,"ammo":"arrow"}"#).is_err());
+        assert_eq!(parse(r#"{"kind":"sword","interval":0}"#), Err(WeaponError::Interval));
+        assert_eq!(parse(r#"{"kind":"bow","interval":0.3}"#), Err(WeaponError::Ammo), "un arc sans munition");
+        assert_eq!(parse(r#"{"kind":"sword","interval":0.4,"ammo":"arrow"}"#), Err(WeaponError::Ammo));
         assert!(serde_json::from_str::<WeaponSheet>(r#"{"kind":"fusil","interval":1}"#).is_err());
     }
 }

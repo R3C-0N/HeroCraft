@@ -1,4 +1,4 @@
-//! Transport réseau : des paquets bincode précédés de leur taille (u32 petit-boutiste) sur TCP.
+//! Transport réseau : des paquets postcard précédés de leur taille (u32 petit-boutiste) sur TCP.
 //!
 //! Une `Connection` lit et écrit chacune sur son propre fil : le fil de jeu (boucle du serveur ou
 //! frame du client) ne bloque jamais sur le réseau. Il dépose les paquets à envoyer et relève ceux
@@ -8,7 +8,7 @@ use std::io::{self, BufReader, BufWriter, ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -21,10 +21,10 @@ pub const MAX_PACKET_BYTES: usize = 16 * 1024 * 1024;
 /// Encode un paquet dans une trame prête à envoyer (taille puis contenu) : un paquet diffusé à
 /// tous les joueurs n'est encodé qu'une fois
 pub fn encode_frame<T: Serialize>(packet: &T) -> Vec<u8> {
-    let body = bincode::serialize(packet).expect("paquet sérialisable");
-    let mut frame = Vec::with_capacity(4 + body.len());
-    frame.extend_from_slice(&(body.len() as u32).to_le_bytes());
-    frame.extend_from_slice(&body);
+    // Le contenu s'écrit directement derrière la place réservée à la taille, remplie ensuite
+    let mut frame = postcard::to_extend(packet, vec![0u8; 4]).expect("paquet sérialisable");
+    let len = (frame.len() - 4) as u32;
+    frame[..4].copy_from_slice(&len.to_le_bytes());
     frame
 }
 
@@ -38,7 +38,25 @@ pub fn read_frame<R: Read, T: DeserializeOwned>(reader: &mut R) -> io::Result<T>
     }
     let mut body = vec![0u8; len];
     reader.read_exact(&mut body)?;
-    bincode::deserialize(&body).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+    postcard::from_bytes(&body).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+}
+
+/// Pourquoi une connexion ne donne plus de paquet
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum ConnectionError {
+    #[error("délai d'attente dépassé")]
+    Timeout,
+    /// Le fil de jeu a lâché la file de réception
+    #[error("connexion abandonnée")]
+    Abandoned,
+    #[error("connexion fermée par le pair")]
+    PeerClosed,
+    #[error("erreur de lecture : {0}")]
+    Read(#[source] Arc<io::Error>),
+    #[error("erreur d'écriture : {0}")]
+    Write(#[source] Arc<io::Error>),
+    #[error("connexion fermée")]
+    Closed,
 }
 
 /// Connexion TCP vers un pair : `Out` les paquets envoyés, `In` les paquets reçus
@@ -49,7 +67,7 @@ pub struct Connection<Out, In> {
     /// Paquets reçus, datés à leur arrivée par le fil de lecture
     incoming: Receiver<(Instant, In)>,
     /// Raison de la fermeture, écrite par le fil de lecture ou d'écriture qui l'a constatée
-    closed: Arc<Mutex<Option<String>>>,
+    closed: Arc<Mutex<Option<ConnectionError>>>,
     _out: PhantomData<fn(Out)>,
 }
 
@@ -84,14 +102,14 @@ impl<Out: Serialize, In: DeserializeOwned + Send + 'static> Connection<Out, In> 
                 match read_frame::<_, In>(&mut reader) {
                     Ok(packet) => {
                         if in_tx.send((Instant::now(), packet)).is_err() {
-                            break "connexion abandonnée".to_string();
+                            break ConnectionError::Abandoned;
                         }
                     }
-                    Err(e) if e.kind() == ErrorKind::UnexpectedEof => break "connexion fermée par le pair".to_string(),
-                    Err(e) => break format!("erreur de lecture : {e}"),
+                    Err(e) if e.kind() == ErrorKind::UnexpectedEof => break ConnectionError::PeerClosed,
+                    Err(e) => break ConnectionError::Read(Arc::new(e)),
                 }
             };
-            read_closed.lock().unwrap().get_or_insert(reason);
+            read_closed.lock().unwrap_or_else(PoisonError::into_inner).get_or_insert(reason);
         })?;
 
         let (outgoing, out_rx) = mpsc::channel::<Vec<u8>>();
@@ -109,7 +127,7 @@ impl<Out: Serialize, In: DeserializeOwned + Send + 'static> Connection<Out, In> 
                     }
                 }
                 if let Err(e) = result.and_then(|_| writer.flush()) {
-                    write_closed.lock().unwrap().get_or_insert(format!("erreur d'écriture : {e}"));
+                    write_closed.lock().unwrap_or_else(PoisonError::into_inner).get_or_insert(ConnectionError::Write(Arc::new(e)));
                     let _ = writer.get_ref().shutdown(Shutdown::Both);
                     return;
                 }
@@ -137,14 +155,14 @@ impl<Out: Serialize, In: DeserializeOwned + Send + 'static> Connection<Out, In> 
         let _ = self.outgoing.send(frame);
     }
 
-    /// Paquet reçu suivant sans attendre : `Ok(None)` si aucun, `Err(raison)` si la connexion est fermée
-    pub fn try_recv(&self) -> Result<Option<In>, String> {
+    /// Paquet reçu suivant sans attendre : `Ok(None)` si aucun, `Err` si la connexion est fermée
+    pub fn try_recv(&self) -> Result<Option<In>, ConnectionError> {
         Ok(self.try_recv_timed()?.map(|(_, packet)| packet))
     }
 
     /// Comme `try_recv`, avec l'instant d'arrivée du paquet : il reste exact même si le fil de jeu
     /// relève ses paquets avec retard (fenêtre en arrière-plan qui dessine peu d'images)
-    pub fn try_recv_timed(&self) -> Result<Option<(Instant, In)>, String> {
+    pub fn try_recv_timed(&self) -> Result<Option<(Instant, In)>, ConnectionError> {
         match self.incoming.try_recv() {
             Ok(packet) => Ok(Some(packet)),
             Err(TryRecvError::Empty) => match self.closed_reason() {
@@ -152,21 +170,21 @@ impl<Out: Serialize, In: DeserializeOwned + Send + 'static> Connection<Out, In> 
                 Some(reason) => Err(reason),
                 None => Ok(None),
             },
-            Err(TryRecvError::Disconnected) => Err(self.closed_reason().unwrap_or_else(|| "connexion fermée".into())),
+            Err(TryRecvError::Disconnected) => Err(self.closed_reason().unwrap_or(ConnectionError::Closed)),
         }
     }
 
     /// Attend le paquet suivant au plus `timeout`
-    pub fn recv_timeout(&self, timeout: Duration) -> Result<In, String> {
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<In, ConnectionError> {
         match self.incoming.recv_timeout(timeout) {
             Ok((_, packet)) => Ok(packet),
-            Err(RecvTimeoutError::Timeout) => Err("délai d'attente dépassé".into()),
-            Err(RecvTimeoutError::Disconnected) => Err(self.closed_reason().unwrap_or_else(|| "connexion fermée".into())),
+            Err(RecvTimeoutError::Timeout) => Err(ConnectionError::Timeout),
+            Err(RecvTimeoutError::Disconnected) => Err(self.closed_reason().unwrap_or(ConnectionError::Closed)),
         }
     }
 
-    fn closed_reason(&self) -> Option<String> {
-        self.closed.lock().unwrap().clone()
+    fn closed_reason(&self) -> Option<ConnectionError> {
+        self.closed.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 }
 
@@ -203,6 +221,16 @@ mod tests {
         let mut frame = ((MAX_PACKET_BYTES + 1) as u32).to_le_bytes().to_vec();
         frame.extend_from_slice(&[0; 16]);
         let err = read_frame::<_, ClientPacket>(&mut frame.as_slice()).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_truncated_body_is_invalid_data() {
+        let frame = encode_frame(&ClientPacket::ChatMessage("un message assez long".into()));
+        // La taille annoncée correspond au contenu tronqué : le décodage manque d'octets
+        let mut cut = ((frame.len() - 4 - 5) as u32).to_le_bytes().to_vec();
+        cut.extend_from_slice(&frame[4..frame.len() - 5]);
+        let err = read_frame::<_, ClientPacket>(&mut cut.as_slice()).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
 

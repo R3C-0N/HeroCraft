@@ -257,7 +257,7 @@ mod portraits {
                 time: Some(frame as f64),
                 ..Default::default()
             };
-            let output = ctx.run_ui(input, |root| {
+            let mut output = ctx.run_ui(input, |root| {
                 egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::from_rgb(52, 58, 66))).show(root, |ui| {
                     let painter = ui.painter().clone();
                     let cell = width as f32 / cards.len() as f32;
@@ -273,7 +273,7 @@ mod portraits {
                     }
                 });
             });
-            snapshot.apply_textures(&output.textures_delta);
+            snapshot.apply_textures(&mut output.textures_delta);
             last = Some(output);
         }
         let output = last.unwrap();

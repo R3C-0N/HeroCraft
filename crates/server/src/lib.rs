@@ -62,6 +62,21 @@ const VISION_TEMPLE_BLOCKS: i32 = 2048;
 
 type ClientConnection = Connection<ServerPacket, ClientPacket>;
 
+/// Pourquoi un joueur ne peut pas entrer dans une vision (dit au joueur tel quel)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum VisionError {
+    #[error("joueur inconnu")]
+    UnknownPlayer,
+    #[error("Déjà dans une vision")]
+    AlreadyInVision,
+    #[error("position encore inconnue")]
+    UnknownPosition,
+    #[error("position hors de la planète")]
+    OffPlanet,
+    #[error("Aucun temple à proximité")]
+    NoTemple,
+}
+
 pub struct ServerConfig {
     /// Adresse d'écoute (ex. `0.0.0.0:7777`)
     pub bind: String,
@@ -335,7 +350,7 @@ impl Server {
                 }
                 match self.enter_vision(id) {
                     Ok(()) => vec![format!("{who} enters the vision")],
-                    Err(reason) => vec![reason],
+                    Err(reason) => vec![reason.to_string()],
                 }
             }
             "vision" => vec!["Usage: vision <player> [end]".to_string()],
@@ -624,7 +639,7 @@ impl Server {
                     Ok(Some(packet)) => self.handle_packet(id, packet),
                     Ok(None) => break,
                     Err(reason) => {
-                        self.leave(id, &reason);
+                        self.leave(id, &reason.to_string());
                         break;
                     }
                 }
@@ -701,7 +716,7 @@ impl Server {
             ClientPacket::Vision { enter: true } => {
                 if let Err(reason) = self.enter_vision(id) {
                     if let Some(player) = self.players.get(&id) {
-                        tell(player, &reason);
+                        tell(player, &reason.to_string());
                     }
                 }
             }
@@ -1115,15 +1130,15 @@ impl Server {
     /// Fait entrer le joueur `id` dans la vision du temple le plus proche : il se retrouve seul
     /// dans le passé, devant la grande porte de la ville-souvenir, avec l'armée qui s'y masse.
     /// Renvoie la raison d'un refus.
-    pub fn enter_vision(&mut self, id: PlayerId) -> Result<(), String> {
-        let player = self.players.get(&id).ok_or("joueur inconnu")?;
+    pub fn enter_vision(&mut self, id: PlayerId) -> Result<(), VisionError> {
+        let player = self.players.get(&id).ok_or(VisionError::UnknownPlayer)?;
         if player.vision.is_some() {
-            return Err("Déjà dans une vision".into());
+            return Err(VisionError::AlreadyInVision);
         }
-        let back = player.position.ok_or("position encore inconnue")?;
-        let pos = self.geometry.block_at_point(back.as_dvec3()).ok_or("position hors de la planète")?;
+        let back = player.position.ok_or(VisionError::UnknownPosition)?;
+        let pos = self.geometry.block_at_point(back.as_dvec3()).ok_or(VisionError::OffPlanet)?;
         // Le peuple du joueur viendra de sa légende ; d'ici là, la vision est celle d'un humain
-        let entry = self.generator.vision_entry(pos.face, pos.x, pos.z, VISION_TEMPLE_BLOCKS, Culture::Humains).ok_or("Aucun temple à proximité")?;
+        let entry = self.generator.vision_entry(pos.face, pos.x, pos.z, VISION_TEMPLE_BLOCKS, Culture::Humains).ok_or(VisionError::NoTemple)?;
         let (site, holder) = (entry.site, entry.holder);
         let generator = self.generator.with_epoch(Epoch::Past(holder));
         let feet = self.geometry.corner(site.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();

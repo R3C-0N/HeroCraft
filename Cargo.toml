@@ -4,6 +4,7 @@ members = [
     "crates/common",
     "crates/world",
     "crates/voxel_engine",
+    "crates/meshing",
     "crates/server",
     "crates/client",
 ]
@@ -17,13 +18,16 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 glam = { version = "0.28", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
-bincode = "1.3"
+# Encodage binaire des paquets réseau et des annonces LAN (bincode 1 n'est plus maintenu)
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
 serde_json = "1.0"
 log = "0.4"
 env_logger = "0.11"
 rand = "0.8"
 rustc-hash = "2"
 mimalloc = { version = "0.1", default-features = false }
+thiserror = "2"
+anyhow = "1"
 
 # La compilation incrémentale reste active (défaut de Cargo). Pour compiler depuis
 # Windows sur un partage WSL (\\wsl.localhost\...), où elle provoque des erreurs de

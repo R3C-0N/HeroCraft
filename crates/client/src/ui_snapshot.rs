@@ -52,9 +52,10 @@ impl Snapshot {
             }
         }
     }
-
     /// Prend en compte les textures créées, modifiées ou libérées par egui
-    pub fn apply_textures(&mut self, delta: &egui::TexturesDelta) {
+    /// Applique les textures reçues d'egui puis vide `delta` : egui (0.37 et plus) fait avorter
+    /// le programme si un `TexturesDelta` non appliqué est libéré
+    pub fn apply_textures(&mut self, delta: &mut egui::TexturesDelta) {
         for (id, image_delta) in delta.set.iter().flat_map(|(id, deltas)| deltas.iter().map(move |d| (id, d))) {
             let (size, pixels): ([usize; 2], Vec<egui::Color32>) = match &image_delta.image {
                 egui::ImageData::Color(image) => (image.size, image.pixels.clone()),
@@ -77,6 +78,7 @@ impl Snapshot {
         for id in &delta.free {
             self.textures.remove(id);
         }
+        delta.clear();
     }
 
     /// Dessine les triangles d'une image egui par-dessus le fond

@@ -1,0 +1,40 @@
+# Configuration de cargo deny (https://embarkstudios.github.io/cargo-deny/), lancé par la CI
+
+[graph]
+all-features = false
+
+[advisories]
+# Failles connues : toujours bloquantes. Crates non maintenues : seulement nos dépendances directes.
+unmaintained = "workspace"
+ignore = [
+    # bincode 1.3 n'est plus maintenu : son remplacement est un chantier à part
+    { id = "RUSTSEC-2025-0141", reason = "remplacement de bincode prévu (bincode 2, postcard ou bitcode)" },
+]
+
+[licenses]
+# Licences des dépendances actuelles, toutes compatibles avec MIT OR Apache-2.0
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "Unicode-3.0",
+    # Polices embarquées par egui
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Plusieurs versions d'une même crate : signalé sans bloquer (wgpu et winit en tirent beaucoup)
+multiple-versions = "warn"
+wildcards = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

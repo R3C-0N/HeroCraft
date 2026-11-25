@@ -52,12 +52,12 @@ mod tests {
 
     #[test]
     fn ids_serialize_like_their_number() {
-        let raw = bincode::serialize(&42u64).unwrap();
-        assert_eq!(bincode::serialize(&PlayerId(42)).unwrap(), raw);
-        assert_eq!(bincode::serialize(&CreatureId(42)).unwrap(), raw);
-        assert_eq!(bincode::serialize(&ProjectileId(42)).unwrap(), raw);
+        let raw = postcard::to_allocvec(&42u64).unwrap();
+        assert_eq!(postcard::to_allocvec(&PlayerId(42)).unwrap(), raw);
+        assert_eq!(postcard::to_allocvec(&CreatureId(42)).unwrap(), raw);
+        assert_eq!(postcard::to_allocvec(&ProjectileId(42)).unwrap(), raw);
         assert_eq!(serde_json::to_string(&CreatureId(7)).unwrap(), "7");
-        let back: PlayerId = bincode::deserialize(&raw).unwrap();
+        let back: PlayerId = postcard::from_bytes(&raw).unwrap();
         assert_eq!(back, PlayerId(42));
     }
 }

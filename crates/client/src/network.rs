@@ -100,7 +100,7 @@ pub fn server_address(input: &str) -> String {
 /// Connexion menée en tâche de fond : le jeu continue de s'afficher pendant l'accueil
 pub struct PendingJoin {
     pub addr: String,
-    result: Receiver<Result<JoinedWorld, String>>,
+    result: Receiver<anyhow::Result<JoinedWorld>>,
 }
 
 impl PendingJoin {
@@ -114,11 +114,11 @@ impl PendingJoin {
     }
 
     /// Le résultat, une fois la connexion aboutie ou échouée
-    pub fn poll(&self) -> Option<Result<JoinedWorld, String>> {
+    pub fn poll(&self) -> Option<anyhow::Result<JoinedWorld>> {
         match self.result.try_recv() {
             Ok(result) => Some(result),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(Err("connexion interrompue".into())),
+            Err(TryRecvError::Disconnected) => Some(Err(anyhow::anyhow!("connexion interrompue"))),
         }
     }
 }
@@ -132,13 +132,13 @@ pub struct HostedServer {
 }
 
 impl HostedServer {
-    pub fn start(seed: u64, save_dir: PathBuf, pseudo: &str) -> Result<Self, String> {
+    pub fn start(seed: u64, save_dir: PathBuf, pseudo: &str) -> anyhow::Result<Self> {
         let config = |bind: String| ServerConfig { bind, seed, save_dir: Some(save_dir.clone()) };
         // Port habituel s'il est libre, sinon un port choisi par le système
         let mut server = Server::bind(config(format!("0.0.0.0:{}", herocraft_common::DEFAULT_PORT)))
             .or_else(|_| Server::bind(config("0.0.0.0:0".into())))
-            .map_err(|e| format!("impossible d'ouvrir la partie : {e}"))?;
-        let port = server.local_addr().map_err(|e| e.to_string())?.port();
+            .map_err(|e| anyhow::anyhow!("impossible d'ouvrir la partie : {e}"))?;
+        let port = server.local_addr()?.port();
         if let Err(e) = server.enable_lan(format!("Monde de {pseudo}")) {
             warn!("Annonce de la partie sur le réseau local impossible : {e}");
         }
@@ -146,8 +146,7 @@ impl HostedServer {
         let thread_running = running.clone();
         let thread = std::thread::Builder::new()
             .name("serveur-integre".into())
-            .spawn(move || server.run(&thread_running))
-            .map_err(|e| e.to_string())?;
+            .spawn(move || server.run(&thread_running))?;
         info!("Partie ouverte au réseau local sur le port {port}.");
         Ok(Self { port, running, thread: Some(thread) })
     }
@@ -173,16 +172,16 @@ pub struct JoinedWorld {
 }
 
 /// Se connecte et attend l'accueil du serveur (bloquant)
-pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
-    let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| format!("connexion à {addr} impossible : {e}"))?;
+pub fn join(addr: &str, name: &str) -> anyhow::Result<JoinedWorld> {
+    let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| anyhow::anyhow!("connexion à {addr} impossible : {e}"))?;
     connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
 
     let (player_id, seed, spawn_position, chunk_count) = match connection.recv_timeout(CONNECT_TIMEOUT)? {
         ServerPacket::ConnectAck { player_id, world_seed, spawn_position, edited_chunks, .. } => {
             (player_id, world_seed, spawn_position, edited_chunks)
         }
-        ServerPacket::Disconnect(reason) => return Err(format!("refusé par le serveur : {reason}")),
-        other => return Err(format!("réponse inattendue du serveur : {other:?}")),
+        ServerPacket::Disconnect(reason) => anyhow::bail!("refusé par le serveur : {reason}"),
+        other => anyhow::bail!("réponse inattendue du serveur : {other:?}"),
     };
 
     let mut client = NetClient {
@@ -200,7 +199,7 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
         match client.connection.recv_timeout(CONNECT_TIMEOUT)? {
             ServerPacket::ChunkData { coord, compressed_voxels } => match ChunkData::decompress_rle(&compressed_voxels) {
                 Ok(chunk) => edited_chunks.push((coord, chunk)),
-                Err(e) => return Err(format!("chunk {coord:?} illisible : {e}")),
+                Err(e) => anyhow::bail!("chunk {coord:?} illisible : {e}"),
             },
             other => {
                 // Rien d'autre n'est attendu avant la fin des chunks, mais un paquet reste un paquet
@@ -541,7 +540,7 @@ impl NetClient {
                 Ok(Some((at, packet))) => events.extend(self.handle(at, packet)),
                 Ok(None) => break,
                 Err(reason) => {
-                    events.push(NetEvent::Disconnected(reason));
+                    events.push(NetEvent::Disconnected(reason.to_string()));
                     break;
                 }
             }

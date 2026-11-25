@@ -105,15 +105,27 @@ pub struct BlockSheet {
 #[serde(try_from = "String")]
 pub struct Rgba(pub [f32; 4]);
 
-impl TryFrom<String> for Rgba {
-    type Error = String;
+/// Couleur écrite autrement que `#rrggbb` ou `#rrggbbaa`
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ColorError {
+    #[error("couleur « {0} » : #rrggbb ou #rrggbbaa attendu")]
+    Format(String),
+    #[error("couleur « {0} » illisible")]
+    Unreadable(String),
+}
 
-    fn try_from(text: String) -> Result<Self, String> {
-        let hex = text.strip_prefix('#').filter(|h| (h.len() == 6 || h.len() == 8) && h.is_ascii());
-        let hex = hex.ok_or_else(|| format!("couleur « {text} » : #rrggbb ou #rrggbbaa attendu"))?;
+impl TryFrom<String> for Rgba {
+    type Error = ColorError;
+
+    fn try_from(text: String) -> Result<Self, ColorError> {
+        let Some(hex) = text.strip_prefix('#').filter(|h| (h.len() == 6 || h.len() == 8) && h.is_ascii()) else {
+            return Err(ColorError::Format(text));
+        };
         let mut rgba = [1.0; 4];
         for (i, value) in rgba.iter_mut().enumerate().take(hex.len() / 2) {
-            let byte = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).map_err(|_| format!("couleur « {text} » illisible"))?;
+            let Ok(byte) = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16) else {
+                return Err(ColorError::Unreadable(text));
+            };
             *value = byte as f32 / 255.0;
         }
         Ok(Rgba(rgba))
@@ -307,14 +319,53 @@ pub struct BlockShape {
     pub texture: ShapeTexture,
 }
 
+/// Forme de bloc mal décrite
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ShapeError {
+    #[error("forme sans pavé")]
+    Empty,
+    #[error("pavé {0:?} invalide : [x0, y0, z0, x1, y1, z1] de 0 à 16, chaque début avant sa fin")]
+    InvalidBox(ShapeBox),
+}
+
+/// Fiche de forme (`shapes/*.json`) impossible à lire
+#[derive(Debug, thiserror::Error)]
+pub enum ShapeSheetError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Shape(#[from] ShapeError),
+}
+
+/// Fiche de bloc impossible à lire ou qui ne tient pas debout
+#[derive(Debug, thiserror::Error)]
+pub enum BlockSheetError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("numéro {0} invalide (de 1 à {max} : 0 est l'air)", max = BLOCK_ID_LIMIT - 1)]
+    NumericId(u16),
+    #[error("upside_down demande \"rotation\": \"horizontal\"")]
+    UpsideDownNeedsHorizontal,
+    #[error("lumière invalide (de 0 à 15)")]
+    Light,
+    #[error(transparent)]
+    Shape(#[from] ShapeError),
+    #[error(transparent)]
+    Loot(#[from] crate::loot::LootError),
+}
+
 impl BlockShape {
-    pub fn new(boxes: &[ShapeBox], texture: ShapeTexture) -> Result<Self, String> {
+    pub fn new(boxes: &[ShapeBox], texture: ShapeTexture) -> Result<Self, ShapeError> {
         if boxes.is_empty() {
-            return Err("forme sans pavé".into());
+            return Err(ShapeError::Empty);
         }
         for b in boxes {
             if b.iter().any(|&v| v > 16) || b[0] >= b[3] || b[1] >= b[4] || b[2] >= b[5] {
-                return Err(format!("pavé {b:?} invalide : [x0, y0, z0, x1, y1, z1] de 0 à 16, chaque début avant sa fin"));
+                return Err(ShapeError::InvalidBox(*b));
             }
         }
         let variants: Vec<Vec<ShapeBox>> = (0..SHAPE_VARIANTS)
@@ -477,17 +528,17 @@ fn yes() -> bool {
 
 impl BlockSheet {
     /// Lit la fiche JSON d'un bloc et vérifie qu'elle tient debout
-    pub fn parse(id: &str, json: &str) -> Result<Self, String> {
-        let mut sheet: BlockSheet = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    pub fn parse(id: &str, json: &str) -> Result<Self, BlockSheetError> {
+        let mut sheet: BlockSheet = serde_json::from_str(json)?;
         sheet.id = id.to_string();
         if sheet.numeric_id == 0 || sheet.numeric_id >= BLOCK_ID_LIMIT {
-            return Err(format!("numéro {} invalide (de 1 à {} : 0 est l'air)", sheet.numeric_id, BLOCK_ID_LIMIT - 1));
+            return Err(BlockSheetError::NumericId(sheet.numeric_id));
         }
         if sheet.upside_down && sheet.rotation != BlockRotation::Horizontal {
-            return Err("upside_down demande \"rotation\": \"horizontal\"".into());
+            return Err(BlockSheetError::UpsideDownNeedsHorizontal);
         }
         if sheet.light > 15 {
-            return Err("lumière invalide (de 0 à 15)".into());
+            return Err(BlockSheetError::Light);
         }
         if sheet.liquid {
             sheet.solid = false;
@@ -626,7 +677,7 @@ impl BlockRegistry {
                 continue;
             }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            let result = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|text| BlockSheet::parse(&id, &text));
+            let result = std::fs::read_to_string(&path).map_err(BlockSheetError::from).and_then(|text| BlockSheet::parse(&id, &text));
             match result {
                 Ok(sheet) => sheets.push(sheet),
                 Err(e) => errors.push(format!("Bloc {} ignoré : {e}", path.display())),
@@ -648,10 +699,10 @@ impl BlockRegistry {
                 continue;
             }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            let result = std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|text| serde_json::from_str::<ShapeSheet>(&text).map_err(|e| e.to_string()))
-                .and_then(|sheet| BlockShape::new(&sheet.boxes, sheet.texture));
+            let result = (|| -> Result<BlockShape, ShapeSheetError> {
+                let sheet: ShapeSheet = serde_json::from_str(&std::fs::read_to_string(&path)?)?;
+                Ok(BlockShape::new(&sheet.boxes, sheet.texture)?)
+            })();
             match result {
                 Ok(shape) => {
                     shapes.insert(id, Arc::new(shape));
@@ -1029,7 +1080,7 @@ mod tests {
         assert!(BlockShape::new(&[[4, 0, 0, 4, 8, 16]], ShapeTexture::Crop).is_err());
         let inline = r##"{ "numeric_id": 500, "name": "Plaque", "color": { "side": "#808080" }, "shape": { "boxes": [[0, 0, 0, 16, 2, 16]] } }"##;
         assert!(BlockSheet::parse("plaque", inline).is_ok());
-        assert!(BlockSheet::parse("plaque", &inline.replace("16, 2, 16", "16, 2, 99")).unwrap_err().contains("invalide"));
+        assert!(BlockSheet::parse("plaque", &inline.replace("16, 2, 16", "16, 2, 99")).unwrap_err().to_string().contains("invalide"));
     }
 
     #[test]
@@ -1115,9 +1166,9 @@ mod tests {
         assert_eq!(cube.top_color(), cube.side_color());
 
         let typo = ok.replace("color", "colour");
-        assert!(BlockSheet::parse("cube", &typo).unwrap_err().contains("colour"));
-        assert!(BlockSheet::parse("cube", &ok.replace("500", "0")).is_err());
-        assert!(BlockSheet::parse("cube", &ok.replace("#808080", "gris")).unwrap_err().contains("gris"));
+        assert!(BlockSheet::parse("cube", &typo).unwrap_err().to_string().contains("colour"));
+        assert!(matches!(BlockSheet::parse("cube", &ok.replace("500", "0")), Err(BlockSheetError::NumericId(0))));
+        assert!(BlockSheet::parse("cube", &ok.replace("#808080", "gris")).unwrap_err().to_string().contains("gris"));
 
         let nothing = ok.replace(r#""name""#, r#""drop": null, "name""#);
         assert_eq!(BlockSheet::parse("cube", &nothing).unwrap().drop, BlockDrop::Nothing);

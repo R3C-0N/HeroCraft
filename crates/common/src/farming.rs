@@ -48,16 +48,29 @@ pub struct CropSheet {
     pub needs_water: bool,
 }
 
+/// Fiche de culture impossible à lire ou qui ne tient pas debout
+#[derive(Debug, thiserror::Error)]
+pub enum CropSheetError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("il faut au moins deux stades (le semis et la plante mûre)")]
+    TooFewStages,
+    #[error("durée d'un stade invalide (positive, en minutes)")]
+    StageMinutes,
+}
+
 impl CropSheet {
     /// Lit la fiche JSON d'une culture et vérifie qu'elle tient debout
-    pub fn parse(id: &str, json: &str) -> Result<Self, String> {
-        let mut sheet: CropSheet = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    pub fn parse(id: &str, json: &str) -> Result<Self, CropSheetError> {
+        let mut sheet: CropSheet = serde_json::from_str(json)?;
         sheet.id = id.to_string();
         if sheet.stages.len() < 2 {
-            return Err("il faut au moins deux stades (le semis et la plante mûre)".into());
+            return Err(CropSheetError::TooFewStages);
         }
         if !(sheet.stage_minutes > 0.0) {
-            return Err("durée d'un stade invalide (positive, en minutes)".into());
+            return Err(CropSheetError::StageMinutes);
         }
         Ok(sheet)
     }
@@ -144,7 +157,7 @@ impl CropRegistry {
                 continue;
             }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|text| CropSheet::parse(&id, &text)) {
+            match std::fs::read_to_string(&path).map_err(CropSheetError::from).and_then(|text| CropSheet::parse(&id, &text)) {
                 Ok(sheet) => sheets.push(sheet),
                 Err(e) => errors.push(format!("Culture {} ignorée : {e}", path.display())),
             }
@@ -166,15 +179,11 @@ impl CropRegistry {
                 errors.push(format!("Culture {} ignorée : graine « {} » inconnue", sheet.id, sheet.seed));
                 continue;
             };
-            let stages: Result<Vec<BlockId>, String> =
-                sheet.stages.iter().map(|s| blocks().find(s).ok_or_else(|| format!("Culture {} ignorée : bloc « {s} » inconnu", sheet.id))).collect();
-            let stages = match stages {
-                Ok(stages) => stages,
-                Err(e) => {
-                    errors.push(e);
-                    continue;
-                }
-            };
+            let stages: Vec<BlockId> = sheet.stages.iter().map_while(|s| blocks().find(s)).collect();
+            if let Some(unknown) = sheet.stages.get(stages.len()) {
+                errors.push(format!("Culture {} ignorée : bloc « {unknown} » inconnu", sheet.id));
+                continue;
+            }
             if let Some(taken) = stages.iter().find(|s| registry.stages.contains_key(&s.0)) {
                 errors.push(format!("Culture {} ignorée : le bloc {} sert déjà à une autre culture", sheet.id, blocks().name(*taken)));
                 continue;
@@ -332,9 +341,9 @@ mod tests {
     fn test_invalid_sheets_are_explained() {
         let ok = r#"{ "name": "Blé", "seed": "grainesBle", "stages": ["bleStade1", "bleStade4"], "stage_minutes": 1 }"#;
         assert!(CropSheet::parse("ble", ok).is_ok());
-        assert!(CropSheet::parse("ble", &ok.replace(r#""bleStade1", "#, "")).unwrap_err().contains("deux stades"));
-        assert!(CropSheet::parse("ble", &ok.replace(r#""stage_minutes": 1"#, r#""stage_minutes": 0"#)).is_err());
-        assert!(CropSheet::parse("ble", &ok.replace("seed", "graine")).is_err());
+        assert!(CropSheet::parse("ble", &ok.replace(r#""bleStade1", "#, "")).unwrap_err().to_string().contains("deux stades"));
+        assert!(matches!(CropSheet::parse("ble", &ok.replace(r#""stage_minutes": 1"#, r#""stage_minutes": 0"#)), Err(CropSheetError::StageMinutes)));
+        assert!(matches!(CropSheet::parse("ble", &ok.replace("seed", "graine")), Err(CropSheetError::Json(_))));
         let unknown = CropSheet::parse("x", &ok.replace("bleStade4", "inconnu")).unwrap();
         let (registry, errors) = CropRegistry::from_sheets(vec![unknown]);
         assert!(registry.is_empty() && errors[0].contains("inconnu"));

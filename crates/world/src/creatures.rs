@@ -2008,11 +2008,13 @@ impl CreatureWorld {
             }
             let c = self.creatures.swap_remove(index);
             let (Some(zone), Some(sleeping), true) = (zone, self.sleeping_creature(&c), c.is_alive()) else { continue };
-            if !self.sleeping.contains_key(&zone) {
-                let population = self.populate_zone(zone, query);
+            if let Some(population) = self.sleeping.get_mut(&zone) {
+                population.push(sleeping);
+            } else {
+                let mut population = self.populate_zone(zone, query);
+                population.push(sleeping);
                 self.sleeping.insert(zone, population);
             }
-            self.sleeping.get_mut(&zone).unwrap().push(sleeping);
         }
     }
 
@@ -2749,8 +2751,9 @@ impl Walker<'_, '_> {
             flight.peak = flight.peak.max(altitude);
             c.stun = c.stun.max(0.1);
             if c.vertical_speed == 0.0 && altitude <= ground + 1e-4 {
-                let flight = c.flight.take().unwrap();
-                c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
+                if let Some(flight) = c.flight.take() {
+                    c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
+                }
             }
         }
         let on_ground = altitude <= ground + 1e-4 && c.vertical_speed <= 0.0;
