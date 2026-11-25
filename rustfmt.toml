@@ -1,0 +1,5 @@
+# Style proche de celui du code existant : lignes larges et heuristiques « Max »,
+# pour que rustfmt coupe le moins possible les appels et les expressions déjà écrits.
+# L'édition de style suit celle du workspace (2024), lue dans Cargo.toml.
+max_width = 140
+use_small_heuristics = "Max"
