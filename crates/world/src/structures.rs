@@ -4423,7 +4423,7 @@ fn wobbly(a: (f64, f64), b: (f64, f64), amp: f64, dice: &mut Dice) -> Vec<(f64, 
     let (dx, dz) = (b.0 - a.0, b.1 - a.1);
     let len = (dx * dx + dz * dz).sqrt().max(1.0);
     let (nx, nz) = (-dz / len, dx / len);
-    let (f1, p1, p2) = (1.0 + unit(dice.next()) * 1.5, unit(dice.next()) * 6.283, unit(dice.next()) * 6.283);
+    let (f1, p1, p2) = (1.0 + unit(dice.next()) * 1.5, unit(dice.next()) * std::f64::consts::TAU, unit(dice.next()) * std::f64::consts::TAU);
     let n = (len / 4.0).ceil() as i32;
     (0..=n)
         .map(|i| {

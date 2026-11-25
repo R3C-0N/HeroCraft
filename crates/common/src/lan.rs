@@ -53,7 +53,7 @@ impl LanAnnouncer {
     /// Diffuse l'annonce sur le réseau local et sur cette machine (les erreurs, par exemple sans
     /// réseau, sont ignorées : l'annonce suivante retentera)
     pub fn announce(&self, announce: &LanAnnounce) {
-        let Ok(bytes) = bincode::serialize(announce) else { return };
+        let Ok(bytes) = postcard::to_allocvec(announce) else { return };
         let _ = self.socket.send_to(&bytes, (Ipv4Addr::BROADCAST, LAN_DISCOVERY_PORT));
         let _ = self.socket.send_to(&bytes, (Ipv4Addr::LOCALHOST, LAN_DISCOVERY_PORT));
     }
@@ -93,7 +93,7 @@ impl LanBrowser {
         let mut buf = [0u8; 1024];
         let now = Instant::now();
         while let Ok((len, from)) = self.socket.recv_from(&mut buf) {
-            let Ok(announce) = bincode::deserialize::<LanAnnounce>(&buf[..len]) else { continue };
+            let Ok(announce) = postcard::from_bytes::<LanAnnounce>(&buf[..len]) else { continue };
             if announce.magic != MAGIC || announce.protocol_version != PROTOCOL_VERSION {
                 continue;
             }
@@ -135,7 +135,7 @@ mod tests {
         let mut browser = LanBrowser::bind(0).unwrap();
         let port = browser.socket.local_addr().unwrap().port();
         let sender = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let bytes = bincode::serialize(&LanAnnounce::new(42, "Monde de Mat".into(), 7777, 2, 2026)).unwrap();
+        let bytes = postcard::to_allocvec(&LanAnnounce::new(42, "Monde de Mat".into(), 7777, 2, 2026)).unwrap();
         // Deux fois la même partie, et un paquet étranger
         sender.send_to(&bytes, (Ipv4Addr::LOCALHOST, port)).unwrap();
         sender.send_to(&bytes, (Ipv4Addr::LOCALHOST, port)).unwrap();

@@ -340,12 +340,12 @@ mod tests {
     }
 
     #[test]
-    fn legend_survives_json_and_bincode() {
+    fn legend_survives_json_and_postcard() {
         let l = legende();
         let json = serde_json::to_string(&l).unwrap();
         assert!(json.contains("\"formeTete\""));
         assert_eq!(serde_json::from_str::<Legend>(&json).unwrap(), l);
-        let bin = bincode::serialize(&l).unwrap();
-        assert_eq!(bincode::deserialize::<Legend>(&bin).unwrap(), l);
+        let bin = postcard::to_allocvec(&l).unwrap();
+        assert_eq!(postcard::from_bytes::<Legend>(&bin).unwrap(), l);
     }
 }

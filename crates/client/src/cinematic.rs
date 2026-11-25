@@ -413,7 +413,7 @@ mod tests {
         crate::ui_skin::install(&ctx);
         // Les polices installées servent à partir de l'image suivante
         for _ in 0..2 {
-            let _ = ctx.run_pass(egui::RawInput::default(), |ctx| draw(ctx, &overlay));
+            ctx.run_pass(egui::RawInput::default(), |ctx| draw(ctx, &overlay)).textures_delta.clear();
         }
     }
 
@@ -448,8 +448,8 @@ mod tests {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))),
                         ..Default::default()
                     };
-                    let output = ctx.run_pass(input, |ctx| draw(ctx, &overlay));
-                    snapshot.apply_textures(&output.textures_delta);
+                    let mut output = ctx.run_pass(input, |ctx| draw(ctx, &overlay));
+                    snapshot.apply_textures(&mut output.textures_delta);
                     last = Some(output);
                 }
                 let output = last.unwrap();

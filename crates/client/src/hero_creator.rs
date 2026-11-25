@@ -879,7 +879,7 @@ mod tests {
     fn run(creator: &mut HeroCreator, ctx: &egui::Context) -> Option<CreatorEvent> {
         let mut event = None;
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))), ..Default::default() };
-        let _ = ctx.run_pass(input, |ctx| event = creator.show(ctx));
+        ctx.run_pass(input, |ctx| event = creator.show(ctx)).textures_delta.clear();
         event
     }
 
@@ -958,7 +958,7 @@ mod tests {
             snapshot.set_background(None);
             let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
-            let output = ctx.run_ui(input, |root| {
+            let mut output = ctx.run_ui(input, |root| {
                 egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     for (i, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
                         let min = egui::pos2((i % cols) as f32 * cell.x, (i / cols) as f32 * cell.y);
@@ -970,7 +970,7 @@ mod tests {
                     }
                 });
             });
-            snapshot.apply_textures(&output.textures_delta);
+            snapshot.apply_textures(&mut output.textures_delta);
             let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
             snapshot.paint(&primitives, output.pixels_per_point);
             snapshot.save(&dir.join(format!("{name}.png")));
@@ -1004,7 +1004,7 @@ mod tests {
             snapshot.set_background(None);
             let mut preview = Preview::default();
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, cell)), ..Default::default() };
-            let output = ctx.run_ui(input, |root| {
+            let mut output = ctx.run_ui(input, |root| {
                 egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, cell).shrink(4.0);
                     let texture = preview.texture(ui.ctx(), &cfg);
@@ -1012,7 +1012,7 @@ mod tests {
                     draw_figure(ui.painter(), rect, &texture, &cfg, figure, 40.0_f32.to_radians(), (-4.0_f32).to_radians());
                 });
             });
-            snapshot.apply_textures(&output.textures_delta);
+            snapshot.apply_textures(&mut output.textures_delta);
             let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
             snapshot.paint(&primitives, output.pixels_per_point);
             snapshot.save(&dir.join(format!("habitant-{id}.png")));
@@ -1062,7 +1062,7 @@ mod tests {
             snapshot.set_background(None);
             let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
-            let output = ctx.run_ui(input, |root| {
+            let mut output = ctx.run_ui(input, |root| {
                 egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     for (row, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
                         let texture = preview.texture(ui.ctx(), cfg);
@@ -1077,7 +1077,7 @@ mod tests {
                     }
                 });
             });
-            snapshot.apply_textures(&output.textures_delta);
+            snapshot.apply_textures(&mut output.textures_delta);
             let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
             snapshot.paint(&primitives, output.pixels_per_point);
             snapshot.save(&dir.join(format!("{name}.png")));
