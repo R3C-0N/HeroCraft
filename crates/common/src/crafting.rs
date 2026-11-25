@@ -268,40 +268,70 @@ impl CraftingBook {
     }
 }
 
-fn resolve(sheet: &RecipeSheet, result: ItemId, stations: &[Station], find: &impl Fn(&str) -> Option<ItemId>, blocks: &BlockRegistry) -> Result<Recipe, String> {
+/// Recette qui ne tient pas debout
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RecipeError {
+    #[error("elle ne donne rien (count à 0)")]
+    NoCount,
+    #[error("aucun ingrédient")]
+    NoIngredient,
+    #[error("ce bloc ne se garde pas dans l'inventaire")]
+    BlockNotKept,
+    #[error("l'établi « {0} » n'existe pas")]
+    UnknownStation(String),
+    #[error("niveau {level} invalide pour {station} (de 1 à {max})")]
+    Level { level: u8, station: String, max: u8 },
+    #[error("un niveau sans établi")]
+    LevelWithoutStation,
+    #[error("« {0} » : il en faut au moins un")]
+    ZeroCount(String),
+    #[error("l'ingrédient « {0} » n'existe pas")]
+    UnknownIngredient(String),
+}
+
+/// Fiche d'établi impossible à lire
+#[derive(Debug, thiserror::Error)]
+enum StationSheetError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+}
+
+fn resolve(sheet: &RecipeSheet, result: ItemId, stations: &[Station], find: &impl Fn(&str) -> Option<ItemId>, blocks: &BlockRegistry) -> Result<Recipe, RecipeError> {
     if sheet.count == 0 {
-        return Err("elle ne donne rien (count à 0)".into());
+        return Err(RecipeError::NoCount);
     }
     if sheet.ingredients.0.is_empty() {
-        return Err("aucun ingrédient".into());
+        return Err(RecipeError::NoIngredient);
     }
     if let Some(block) = result.block() {
         if blocks.drop_of(block) != Some(block) {
-            return Err("ce bloc ne se garde pas dans l'inventaire".into());
+            return Err(RecipeError::BlockNotKept);
         }
     }
     let station = match &sheet.station {
         None => None,
         Some(id) => {
-            let index = stations.iter().position(|s| &s.id == id).ok_or_else(|| format!("l'établi « {id} » n'existe pas"))?;
+            let index = stations.iter().position(|s| &s.id == id).ok_or_else(|| RecipeError::UnknownStation(id.clone()))?;
             let max = stations[index].max_level();
             if !(1..=max).contains(&sheet.level) {
-                return Err(format!("niveau {} invalide pour {id} (de 1 à {max})", sheet.level));
+                return Err(RecipeError::Level { level: sheet.level, station: id.clone(), max });
             }
             Some(StationAt { station: index, level: sheet.level })
         }
     };
     if station.is_none() && sheet.level != 1 {
-        return Err("un niveau sans établi".into());
+        return Err(RecipeError::LevelWithoutStation);
     }
     let mut ingredients = Vec::new();
     for (key, count) in &sheet.ingredients.0 {
         if *count == 0 {
-            return Err(format!("« {key} » : il en faut au moins un"));
+            return Err(RecipeError::ZeroCount(key.clone()));
         }
         let options = key
             .split('|')
-            .map(|id| find(id.trim()).ok_or_else(|| format!("l'ingrédient « {} » n'existe pas", id.trim())))
+            .map(|id| find(id.trim()).ok_or_else(|| RecipeError::UnknownIngredient(id.trim().to_string())))
             .collect::<Result<Vec<_>, _>>()?;
         ingredients.push(Ingredient { options, count: *count });
     }
@@ -318,9 +348,7 @@ pub fn load_station_sheets(dir: &Path) -> io::Result<(Vec<StationSheet>, Vec<Str
             continue;
         }
         let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-        let parsed = std::fs::read_to_string(&path)
-            .map_err(|e| e.to_string())
-            .and_then(|text| serde_json::from_str::<StationSheet>(&text).map_err(|e| e.to_string()));
+        let parsed = std::fs::read_to_string(&path).map_err(StationSheetError::from).and_then(|text| Ok(serde_json::from_str::<StationSheet>(&text)?));
         match parsed {
             Ok(mut sheet) => {
                 sheet.id = id;
@@ -395,10 +423,10 @@ mod tests {
         assert_eq!(recipe.ingredients, vec![Ingredient { options: vec![ItemId(20000)], count: 2 }]);
         assert_eq!(recipe.station, Some(StationAt { station: 0, level: 1 }));
         let err = |json: &str| resolve(&sheet(json), ItemId(20001), &stations, &find, blocks()).unwrap_err();
-        assert!(err(r#"{"station": "four", "ingredients": {"stick": 2}}"#).contains("four"));
-        assert!(err(r#"{"station": "workbench", "level": 2, "ingredients": {"stick": 2}}"#).contains("niveau"));
-        assert!(err(r#"{"ingredients": {"caillou": 2}}"#).contains("caillou"));
-        assert!(err(r#"{"ingredients": {}}"#).contains("ingrédient"));
+        assert_eq!(err(r#"{"station": "four", "ingredients": {"stick": 2}}"#), RecipeError::UnknownStation("four".into()));
+        assert!(matches!(err(r#"{"station": "workbench", "level": 2, "ingredients": {"stick": 2}}"#), RecipeError::Level { level: 2, .. }));
+        assert_eq!(err(r#"{"ingredients": {"caillou": 2}}"#), RecipeError::UnknownIngredient("caillou".into()));
+        assert_eq!(err(r#"{"ingredients": {}}"#), RecipeError::NoIngredient);
         assert!(serde_json::from_str::<RecipeSheet>(r#"{"ingredients": {"stick": 2}, "etabli": "x"}"#).is_err());
         // L'ordre de la fiche est gardé
         let order = sheet(r#"{"ingredients": {"zinc": 1, "argent": 2}}"#);
