@@ -359,8 +359,6 @@ pub enum ButtonKind {
     Primary,
     /// Bouton de bois plus sombre (choix non retenu)
     Secondary,
-    /// Bouton rouge
-    Danger,
     /// Élément de liste (onglets latéraux)
     ListItem,
 }
@@ -435,9 +433,6 @@ impl SkinButton {
             Secondary if down => Tex::ButtonSecondaryDown,
             Secondary if hovered => Tex::ButtonSecondaryOver,
             Secondary => Tex::ButtonSecondary,
-            Danger if down => Tex::ButtonDangerDown,
-            Danger if hovered => Tex::ButtonDangerOver,
-            Danger => Tex::ButtonDanger,
         }
     }
 }

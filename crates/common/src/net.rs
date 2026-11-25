@@ -1,4 +1,4 @@
-//! Transport réseau : des paquets bincode précédés de leur taille (u32 petit-boutiste) sur TCP.
+//! Transport réseau : des paquets postcard précédés de leur taille (u32 petit-boutiste) sur TCP.
 //!
 //! Une `Connection` lit et écrit chacune sur son propre fil : le fil de jeu (boucle du serveur ou
 //! frame du client) ne bloque jamais sur le réseau. Il dépose les paquets à envoyer et relève ceux
@@ -21,10 +21,10 @@ pub const MAX_PACKET_BYTES: usize = 16 * 1024 * 1024;
 /// Encode un paquet dans une trame prête à envoyer (taille puis contenu) : un paquet diffusé à
 /// tous les joueurs n'est encodé qu'une fois
 pub fn encode_frame<T: Serialize>(packet: &T) -> Vec<u8> {
-    let body = bincode::serialize(packet).expect("paquet sérialisable");
-    let mut frame = Vec::with_capacity(4 + body.len());
-    frame.extend_from_slice(&(body.len() as u32).to_le_bytes());
-    frame.extend_from_slice(&body);
+    // Le contenu s'écrit directement derrière la place réservée à la taille, remplie ensuite
+    let mut frame = postcard::to_extend(packet, vec![0u8; 4]).expect("paquet sérialisable");
+    let len = (frame.len() - 4) as u32;
+    frame[..4].copy_from_slice(&len.to_le_bytes());
     frame
 }
 
@@ -38,7 +38,7 @@ pub fn read_frame<R: Read, T: DeserializeOwned>(reader: &mut R) -> io::Result<T>
     }
     let mut body = vec![0u8; len];
     reader.read_exact(&mut body)?;
-    bincode::deserialize(&body).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+    postcard::from_bytes(&body).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
 }
 
 /// Connexion TCP vers un pair : `Out` les paquets envoyés, `In` les paquets reçus
@@ -203,6 +203,16 @@ mod tests {
         let mut frame = ((MAX_PACKET_BYTES + 1) as u32).to_le_bytes().to_vec();
         frame.extend_from_slice(&[0; 16]);
         let err = read_frame::<_, ClientPacket>(&mut frame.as_slice()).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_truncated_body_is_invalid_data() {
+        let frame = encode_frame(&ClientPacket::ChatMessage("un message assez long".into()));
+        // La taille annoncée correspond au contenu tronqué : le décodage manque d'octets
+        let mut cut = ((frame.len() - 4 - 5) as u32).to_le_bytes().to_vec();
+        cut.extend_from_slice(&frame[4..frame.len() - 5]);
+        let err = read_frame::<_, ClientPacket>(&mut cut.as_slice()).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
 

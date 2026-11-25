@@ -959,6 +959,15 @@ impl UiState {
         self.station = Some(at);
     }
 
+    /// Une image de l'interface pour les tests : les textures produites par egui sont jetées, sans
+    /// quoi egui (0.37 et plus) fait avorter le test au moment de libérer le `TexturesDelta`
+    #[cfg(test)]
+    pub fn test_frame(&mut self, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
+        let (mut output, action) = self.update_ui(is_ground);
+        output.textures_delta.clear();
+        (output, action)
+    }
+
     #[cfg(test)]
     pub fn toggle_settings(&mut self) -> bool {
         self.set_settings_open(!self.is_settings_open);
@@ -3286,13 +3295,13 @@ mod tests {
         ui.set_screen_size(1280.0, 720.0);
 
         // Vue orbite
-        let (output_orbit, action_orbit) = ui.update_ui(false);
+        let (output_orbit, action_orbit) = ui.test_frame(false);
         assert!(action_orbit.is_none());
         assert!(!output_orbit.shapes.is_empty());
 
         // Vue sol avec menu paramètres ouvert
         ui.set_settings_open(true);
-        let (output_ground, action_ground) = ui.update_ui(true);
+        let (output_ground, action_ground) = ui.test_frame(true);
         assert!(action_ground.is_none());
         assert!(!output_ground.shapes.is_empty());
     }
@@ -3389,7 +3398,7 @@ mod tests {
                 }
                 // Plusieurs frames : egui mesure les zones à la première, et la taille doit rester stable
                 for _ in 0..6 {
-                    ui.update_ui(true);
+                    ui.test_frame(true);
                 }
 
                 let rect = ui
@@ -3441,7 +3450,7 @@ mod tests {
         assert!(crafting().recipes[first_missing.0].station.is_some(), "les recettes de l'établi avant celles à la main");
         ui.open_station(at_bench.unwrap());
         assert!(ui.inventory_open && ui.station == at_bench);
-        let _ = ui.update_ui(true);
+        let _ = ui.test_frame(true);
         ui.handle_escape();
         assert_eq!(ui.station, None);
 
@@ -3525,7 +3534,7 @@ mod tests {
             ui.inventory.add(herocraft_common::BlockId::DIRT);
         }
         for _ in 0..3 {
-            ui.update_ui(true);
+            ui.test_frame(true);
         }
         let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("hotbar"))).expect("barre d'objets dessinée");
         assert!(hotbar.bottom() <= 720.0 && hotbar.left() >= 0.0 && hotbar.right() <= 1280.0, "{:?}", hotbar);
@@ -3538,7 +3547,7 @@ mod tests {
 
         ui.set_inventory_open(true);
         for _ in 0..3 {
-            ui.update_ui(true);
+            ui.test_frame(true);
         }
         let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("inventory_screen"))).expect("inventaire dessiné");
         assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
@@ -3554,7 +3563,7 @@ mod tests {
         ui.set_skills_open(true);
         assert!(ui.skills_open && !ui.inventory_open && ui.screen_open());
         for _ in 0..3 {
-            ui.update_ui(true);
+            ui.test_frame(true);
         }
         let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("skills_screen"))).expect("roue dessinée");
         assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
@@ -3574,7 +3583,7 @@ mod tests {
         ui.set_screen_size(1280.0, 720.0);
         ui.player.stats.hp = 0.5 * ui.player.stats.max_hp;
         for _ in 0..3 {
-            ui.update_ui(true);
+            ui.test_frame(true);
         }
         let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("vitals_hud"))).expect("jauges dessinées");
         assert!(rect.bottom() <= 720.0 && rect.top() > 360.0, "{:?}", rect);
@@ -3587,7 +3596,7 @@ mod tests {
 
         let mut ui = UiState::new(1);
         for _ in 0..3 {
-            ui.update_ui(false);
+            ui.test_frame(false);
         }
         assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::unique("vitals_hud"))).is_none());
     }
@@ -3596,7 +3605,7 @@ mod tests {
     #[test]
     fn test_menu_icons_have_glyphs() {
         let mut ui = UiState::new(1);
-        ui.update_ui(true);
+        ui.test_frame(true);
         let font = egui::FontId::proportional(14.0);
         let icons = ["▶", "⚙", "⌨", "🚪", "⬅", "↺", "🎨", "🎲", "🌍", "🚶", "⏸", "🔄", "✖", "›", "—"]
             .into_iter()
@@ -3699,8 +3708,8 @@ mod tests {
                 ui.raw_input.events.push(egui::Event::PointerMoved(egui::pos2(700.0, 330.0)));
                 ui.raw_input.time = Some(ui.raw_input.time.unwrap_or(0.0) + 0.5);
                 ui.raw_input.predicted_dt = 0.5;
-                let (output, _) = ui.update_ui(true);
-                snapshot.apply_textures(&output.textures_delta);
+                let (mut output, _) = ui.update_ui(true);
+                snapshot.apply_textures(&mut output.textures_delta);
                 last = Some(output);
             }
             let output = last.unwrap();
@@ -3831,8 +3840,8 @@ mod tests {
                 }
                 ui.raw_input.time = Some(ui.raw_input.time.unwrap_or(0.0) + 0.5);
                 ui.raw_input.predicted_dt = 0.5;
-                let (output, _) = ui.update_ui(ground);
-                snapshot.apply_textures(&output.textures_delta);
+                let (mut output, _) = ui.update_ui(ground);
+                snapshot.apply_textures(&mut output.textures_delta);
                 last = Some(output);
             }
             let output = last.unwrap();
